@@ -1,0 +1,31 @@
+# Caddy automatically obtains and renews HTTPS certificates from Let's Encrypt.
+# Replace rdv.example.org with your actual subdomain if different.
+
+rdv.example.org {
+    reverse_proxy 127.0.0.1:3737
+
+    # Enable compression
+    encode gzip
+
+    # Security headers
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "DENY"
+        Referrer-Policy "strict-origin-when-cross-origin"
+        -Server
+    }
+
+    # Reasonable request size limit (10 MB) to prevent abuse
+    request_body {
+        max_size 10MB
+    }
+
+    # Log access (optional, useful for debugging)
+    log {
+        output file /var/log/caddy/rdv.example.org.log {
+            roll_size 10MB
+            roll_keep 5
+        }
+    }
+}

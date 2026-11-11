@@ -1,0 +1,12 @@
+node_modules/
+dist/
+release/
+server-deploy/dist/
+server-deploy/donnees/
+donnees/
+*.db
+*.db-wal
+*.db-shm
+*.log
+.env
+.DS_Store

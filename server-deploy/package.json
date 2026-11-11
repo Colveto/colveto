@@ -1,0 +1,29 @@
+{
+  "name": "vet-clinic-server",
+  "version": "0.5.0",
+  "private": true,
+  "description": "Headless server for the Vet Clinic app (VPS deployment)",
+  "main": "server-standalone.js",
+  "scripts": {
+    "start": "node server-standalone.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "better-sqlite3": "^12.2.0",
+    "cors": "^2.8.5",
+    "exceljs": "^4.4.0",
+    "express": "^4.21.0",
+    "jsonwebtoken": "^9.0.2",
+    "multer": "^1.4.5-lts.1",
+    "nodemailer": "^10.2.1",
+    "otplib": "^12.0.1",
+    "pdfkit": "^0.18.0",
+    "puppeteer": "^25.16.0",
+    "qrcode": "^1.5.4"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "AGPL-3.0-or-later",
+  "author": "Colveto contributors"
+}

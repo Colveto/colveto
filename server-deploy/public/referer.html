@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Adresser un patient</title>
+<link rel="icon" type="image/svg+xml" href="/colveto-logo.png">
+<link href="/fonts/fonts.css" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --blue: #2563EB; --blue-dark: #1d4ed8; --blue-soft: #EFF6FF;
+    --green: #0f5c45; --text: #0f172a; --muted: #64748b;
+    --bg: #f8f7f2; --white: #ffffff; --border: #e5e7eb; --danger: #dc2626; --success: #16a34a;
+  }
+  body { font-family: 'DM Sans', -apple-system, sans-serif; background: var(--bg); color: var(--text); line-height: 1.5; min-height: 100vh; }
+  a { text-decoration: none; color: inherit; }
+  nav { display: flex; align-items: center; justify-content: space-between; padding: 16px 28px; background: var(--white); border-bottom: 1px solid #f1f5f9; }
+  .nav-logo { display: flex; align-items: center; gap: 10px; }
+  .nav-logo img { height: 36px; }
+  .nav-logo-name { font-family: 'DM Serif Display', serif; font-size: 1.4rem; color: var(--blue); letter-spacing: -0.3px; }
+  .nav-back { color: var(--muted); font-size: 0.88rem; }
+  .nav-back:hover { color: var(--blue); }
+  .container { max-width: 640px; margin: 0 auto; padding: 32px 20px 60px; }
+  .header-block { text-align: center; margin-bottom: 28px; }
+  .header-block .badge {
+    display: inline-flex; align-items: center; gap: 8px; background: var(--blue-soft); color: var(--blue);
+    padding: 6px 14px; border-radius: 20px; font-size: 0.82rem; font-weight: 500; margin-bottom: 14px;
+  }
+  .header-block .badge::before { content: ''; width: 6px; height: 6px; background: var(--blue); border-radius: 50%; }
+  .header-block h1 { font-family: 'DM Serif Display', serif; font-size: 2rem; line-height: 1.2; font-weight: 400; }
+  .header-block h1 em { color: var(--blue); font-style: italic; }
+  .header-block .subtitle { color: var(--muted); margin-top: 8px; font-size: 0.98rem; }
+  .promise {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 24px 0;
+  }
+  .promise-item {
+    background: var(--white); border: 1px solid #f1f5f9; border-radius: 12px; padding: 14px 12px; text-align: center;
+  }
+  .promise-item .num {
+    width: 26px; height: 26px; border-radius: 50%; background: var(--blue-soft); color: var(--blue);
+    display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 0.85rem; margin: 0 auto 8px;
+  }
+  .promise-item .txt { font-size: 0.82rem; color: var(--text); }
+  .card { background: var(--white); border-radius: 14px; padding: 26px 22px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(15,23,42,0.04); border: 1px solid #f1f5f9; }
+  h2 { font-family: 'DM Serif Display', serif; font-size: 1.3rem; margin: 0 0 18px; font-weight: 400; }
+  .section-label { font-family: 'DM Serif Display', serif; font-size: 1.05rem; margin: 18px 0 10px; }
+  label { display: block; font-size: 0.78rem; color: var(--muted); margin-bottom: 5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
+  input, select, textarea {
+    width: 100%; padding: 11px 14px; border: 1.5px solid var(--border); border-radius: 8px; font-size: 0.95rem;
+    font-family: inherit; background: var(--white); color: var(--text); transition: border-color 0.15s;
+  }
+  input:focus, select:focus, textarea:focus { outline: none; border-color: var(--blue); box-shadow: 0 0 0 3px var(--blue-soft); }
+  textarea { resize: vertical; }
+  .form-row { margin-bottom: 14px; }
+  .form-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .file-input { border: 1.5px dashed var(--border); border-radius: 10px; padding: 16px; text-align: center; background: #fafafa; }
+  .file-input input { border: none; padding: 0; background: transparent; }
+  .file-hint { font-size: 0.78rem; color: var(--muted); margin-top: 6px; text-transform: none; letter-spacing: normal; font-weight: 400; }
+  .btn {
+    width: 100%; padding: 14px 18px; background: var(--blue); color: white; border: none; border-radius: 10px;
+    font-size: 1rem; font-weight: 500; font-family: inherit; cursor: pointer; transition: background 0.15s, opacity 0.15s;
+  }
+  .btn:hover:not(:disabled) { background: var(--blue-dark); }
+  .btn:disabled { background: #d1d5db; cursor: not-allowed; }
+  .error-msg { background: #fee2e2; color: #991b1b; padding: 11px 14px; border-radius: 8px; margin-top: 12px; font-size: 0.9rem; }
+  .success-screen { text-align: center; padding: 32px 16px; }
+  .success-icon {
+    width: 72px; height: 72px; border-radius: 50%; background: #d1fae5; color: var(--green); font-size: 2.4rem;
+    display: flex; align-items: center; justify-content: center; margin: 0 auto 18px;
+  }
+  .success-screen h2 { color: var(--green); margin-bottom: 12px; }
+  .success-screen .ref { font-size: 1.3rem; font-weight: 600; margin-bottom: 10px; }
+  .success-screen .info { color: var(--muted); font-size: 0.92rem; }
+  .hidden { display: none; }
+  .cabinet-info { text-align: center; color: var(--muted); font-size: 0.88rem; padding: 24px 0 0; }
+  .cabinet-info a { color: var(--blue); }
+  @media (max-width: 480px) {
+    .form-grid-2 { grid-template-columns: 1fr; gap: 0; }
+    .promise { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<nav>
+  <a class="nav-logo" href="/" data-site-link>
+    <img src="/colveto-logo.png" alt="">
+    <span class="nav-logo-name" data-cabinet-name></span>
+  </a>
+  <a class="nav-back" href="/" data-site-link>← Retour au site</a>
+</nav>
+
+<div class="container">
+  <div class="header-block">
+    <span class="badge">Vétérinaires référents</span>
+    <h1>Adressez-nous un <em>patient</em></h1>
+    <div class="subtitle">Il reste votre patient — nous vous tenons informés à chaque étape.</div>
+  </div>
+
+  <div class="promise">
+    <div class="promise-item"><div class="num">1</div><div class="txt">Vous transmettez le dossier et les radios</div></div>
+    <div class="promise-item"><div class="num">2</div><div class="txt">Vous recevez un accusé de réception avec un lien de suivi</div></div>
+    <div class="promise-item"><div class="num">3</div><div class="txt">Vous consultez le dossier de votre patient à tout moment</div></div>
+  </div>
+
+  <div class="card" id="formCard">
+    <h2>Transmettre un dossier</h2>
+    <div class="section-label">Vous (vétérinaire référent)</div>
+    <div class="form-grid-2">
+      <div class="form-row">
+        <label>Nom de famille *</label>
+        <input id="f_referringVetName" required>
+      </div>
+      <div class="form-row">
+        <label>Clinique</label>
+        <input id="f_referringVetClinic">
+      </div>
+    </div>
+    <div class="form-grid-2">
+      <div class="form-row">
+        <label>Email *</label>
+        <input id="f_referringVetEmail" type="email" required>
+      </div>
+      <div class="form-row">
+        <label>Téléphone</label>
+        <input id="f_referringVetPhone" type="tel">
+      </div>
+    </div>
+
+    <div class="section-label">Propriétaire</div>
+    <div class="form-grid-2">
+      <div class="form-row">
+        <label>Prénom</label>
+        <input id="f_ownerFirstName">
+      </div>
+      <div class="form-row">
+        <label>Nom *</label>
+        <input id="f_ownerLastName" required>
+      </div>
+    </div>
+    <div class="form-grid-2">
+      <div class="form-row">
+        <label>Email</label>
+        <input id="f_ownerEmail" type="email">
+      </div>
+      <div class="form-row">
+        <label>Téléphone</label>
+        <input id="f_ownerPhone" type="tel">
+      </div>
+    </div>
+
+    <div class="section-label">Patient</div>
+    <div class="form-grid-2">
+      <div class="form-row">
+        <label>Nom de l'animal *</label>
+        <input id="f_patientName" required>
+      </div>
+      <div class="form-row">
+        <label>Espèce</label>
+        <select id="f_species">
+          <option value="">— Choisir —</option>
+          <option value="Chien">Chien</option>
+          <option value="Chat">Chat</option>
+          <option value="Autre">Autre</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-grid-2">
+      <div class="form-row">
+        <label>Race</label>
+        <input id="f_breed">
+      </div>
+      <div class="form-row">
+        <label>Poids (kg)</label>
+        <input id="f_weight" type="number" step="0.1" min="0">
+      </div>
+    </div>
+
+    <div class="section-label">Motif du renvoi</div>
+    <div class="form-row">
+      <label>Résumé clinique *</label>
+      <textarea id="f_reasonForReferral" rows="3" required placeholder="Anamnèse, examens réalisés, suspicion diagnostique…"></textarea>
+    </div>
+    <div class="form-row">
+      <label>Urgence</label>
+      <select id="f_urgency">
+        <option value="routine">Routine</option>
+        <option value="urgent">Urgent</option>
+      </select>
+    </div>
+
+    <div class="section-label">Documents</div>
+    <div class="form-row">
+      <label>Dossier / courrier de renvoi (PDF)</label>
+      <div class="file-input">
+        <input type="file" id="f_dossier" multiple accept="application/pdf,image/jpeg,image/png,image/webp">
+        <div class="file-hint">PDF, JPEG, PNG ou WEBP — 4 fichiers maximum</div>
+      </div>
+    </div>
+    <div class="form-row">
+      <label>Radios</label>
+      <div class="file-input">
+        <input type="file" id="f_radios" multiple accept="application/pdf,image/jpeg,image/png,image/webp">
+        <div class="file-hint">PDF, JPEG, PNG ou WEBP — 8 fichiers maximum</div>
+      </div>
+    </div>
+
+    <div id="submitError" class="error-msg hidden"></div>
+    <button class="btn" id="submitBtn" style="margin-top:18px;" onclick="submitCase()">Transmettre le dossier</button>
+  </div>
+
+  <div class="card hidden" id="successScreen">
+    <div class="success-screen">
+      <div class="success-icon">✓</div>
+      <h2>Dossier <em>bien reçu</em></h2>
+      <div class="ref" id="successRef"></div>
+      <p class="info">
+        Un accusé de réception vient de vous être envoyé par email, avec un lien sécurisé pour suivre
+        l'évolution du dossier de votre patient à tout moment.
+      </p>
+    </div>
+  </div>
+
+  <div class="cabinet-info" id="cabinetInfo"></div>
+</div>
+
+<script>
+async function apiGet(path) {
+  const r = await fetch(path);
+  if (!r.ok) throw new Error('API error');
+  return r.json();
+}
+
+async function init() {
+  try {
+    const info = await apiGet('/api/public/cabinet-info');
+    document.getElementById('cabinetInfo').innerHTML =
+      `<strong>${info.name}</strong>` +
+      (info.phone ? ` — 📞 ${info.phone}` : '') +
+      (info.email ? ` — <a href="mailto:${info.email}">${info.email}</a>` : '');
+  } catch (e) { /* ignore */ }
+}
+
+async function submitCase() {
+  const errEl = document.getElementById('submitError');
+  errEl.classList.add('hidden');
+
+  const required = {
+    referringVetName: 'f_referringVetName',
+    referringVetEmail: 'f_referringVetEmail',
+    patientName: 'f_patientName',
+    ownerLastName: 'f_ownerLastName',
+    reasonForReferral: 'f_reasonForReferral',
+  };
+  for (const [key, id] of Object.entries(required)) {
+    if (!document.getElementById(id).value.trim()) {
+      errEl.textContent = 'Merci de compléter tous les champs marqués *.';
+      errEl.classList.remove('hidden');
+      return;
+    }
+  }
+
+  const fd = new FormData();
+  const fields = [
+    'referringVetName', 'referringVetClinic', 'referringVetEmail', 'referringVetPhone',
+    'ownerFirstName', 'ownerLastName', 'ownerEmail', 'ownerPhone',
+    'patientName', 'species', 'breed', 'weight', 'reasonForReferral', 'urgency',
+  ];
+  for (const f of fields) {
+    const el = document.getElementById('f_' + f);
+    if (el && el.value.trim()) fd.append(f, el.value.trim());
+  }
+  for (const f of document.getElementById('f_dossier').files) fd.append('dossier', f);
+  for (const f of document.getElementById('f_radios').files) fd.append('radios', f);
+
+  const btn = document.getElementById('submitBtn');
+  btn.disabled = true; btn.textContent = 'Envoi…';
+  try {
+    const r = await fetch('/api/public/referrals', { method: 'POST', body: fd });
+    const result = await r.json();
+    if (!r.ok) throw new Error(result.error || 'Erreur lors de la transmission du dossier');
+    document.getElementById('successRef').textContent = 'Référence : ' + result.reference;
+    document.getElementById('formCard').classList.add('hidden');
+    document.getElementById('successScreen').classList.remove('hidden');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  } catch (e) {
+    errEl.textContent = e.message;
+    errEl.classList.remove('hidden');
+    btn.disabled = false; btn.textContent = 'Transmettre le dossier';
+  }
+}
+
+init();
+</script>
+<script>
+// Nom du cabinet et lien vers son site, depuis Paramètres → Cabinet.
+fetch('/api/public/cabinet-info').then((r) => r.json()).then((c) => {
+  document.querySelectorAll('[data-cabinet-name]').forEach((el) => { el.textContent = c.name || ''; });
+  if (c.name && !document.title.includes(c.name)) document.title += ' — ' + c.name;
+  document.querySelectorAll('[data-site-link]').forEach((a) => {
+    if (c.website) a.href = c.website; else if (a.classList.contains('nav-back')) a.style.display = 'none';
+  });
+}).catch(() => {});
+</script>
+</body>
+</html>

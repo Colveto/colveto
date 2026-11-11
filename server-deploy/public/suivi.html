@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Suivi de votre dossier</title>
+<link rel="icon" type="image/svg+xml" href="/colveto-logo.png">
+<link href="/fonts/fonts.css" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --blue: #2563EB; --blue-dark: #1d4ed8; --blue-soft: #EFF6FF;
+    --green: #0f5c45; --text: #0f172a; --muted: #64748b;
+    --bg: #f8f7f2; --white: #ffffff; --border: #e5e7eb; --danger: #dc2626; --success: #16a34a;
+  }
+  body { font-family: 'DM Sans', -apple-system, sans-serif; background: var(--bg); color: var(--text); line-height: 1.5; min-height: 100vh; }
+  a { text-decoration: none; color: var(--blue); }
+  nav { display: flex; align-items: center; justify-content: space-between; padding: 16px 28px; background: var(--white); border-bottom: 1px solid #f1f5f9; }
+  .nav-logo { display: flex; align-items: center; gap: 10px; }
+  .nav-logo img { height: 36px; }
+  .nav-logo-name { font-family: 'DM Serif Display', serif; font-size: 1.4rem; color: var(--blue); letter-spacing: -0.3px; }
+  .container { max-width: 720px; margin: 0 auto; padding: 32px 20px 60px; }
+  .promise-banner {
+    background: var(--blue-soft); border: 1px solid #dbeafe; border-radius: 12px; padding: 18px 20px; margin-bottom: 22px;
+    display: flex; gap: 12px; align-items: flex-start;
+  }
+  .promise-banner .icon { font-size: 1.4rem; }
+  .promise-banner .txt { font-size: 0.95rem; }
+  .promise-banner strong { font-family: 'DM Serif Display', serif; font-weight: 400; font-size: 1.05rem; }
+  .card { background: var(--white); border-radius: 14px; padding: 24px 22px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(15,23,42,0.04); border: 1px solid #f1f5f9; }
+  h1 { font-family: 'DM Serif Display', serif; font-size: 1.7rem; font-weight: 400; margin-bottom: 4px; }
+  h2 { font-family: 'DM Serif Display', serif; font-size: 1.2rem; font-weight: 400; margin-bottom: 14px; }
+  .status-badge {
+    display: inline-block; padding: 4px 14px; border-radius: 999px; font-size: 0.85rem; font-weight: 600;
+    background: var(--blue-soft); color: var(--blue); margin-bottom: 6px;
+  }
+  .muted { color: var(--muted); font-size: 0.9rem; }
+  .timeline { list-style: none; }
+  .timeline li { padding: 10px 0; border-bottom: 1px solid #f1f5f9; display: flex; justify-content: space-between; gap: 10px; }
+  .timeline li:last-child { border-bottom: none; }
+  .timeline .when { color: var(--muted); font-size: 0.82rem; white-space: nowrap; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
+  th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid #f1f5f9; vertical-align: top; }
+  th { color: var(--muted); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.04em; font-weight: 600; }
+  .empty { color: var(--muted); font-style: italic; padding: 10px 0; }
+  .file-link { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border: 1px solid var(--border); border-radius: 8px; font-size: 0.85rem; margin: 3px 6px 3px 0; }
+  .file-link:hover { border-color: var(--blue); }
+  .resend-form { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+  .resend-form input { flex: 1; min-width: 160px; padding: 10px 12px; border: 1.5px solid var(--border); border-radius: 8px; font-family: inherit; }
+  .btn { padding: 10px 18px; background: var(--blue); color: white; border: none; border-radius: 8px; font-weight: 500; cursor: pointer; font-family: inherit; }
+  .btn:hover { background: var(--blue-dark); }
+  .btn:disabled { background: #d1d5db; cursor: not-allowed; }
+  .error-screen { text-align: center; padding: 40px 20px; }
+  .hidden { display: none; }
+  .success-msg { background: #d1fae5; color: #065f46; padding: 10px 14px; border-radius: 8px; margin-top: 10px; font-size: 0.88rem; }
+</style>
+</head>
+<body>
+
+<nav>
+  <a class="nav-logo" href="/" data-site-link>
+    <img src="/colveto-logo.png" alt="">
+    <span class="nav-logo-name" data-cabinet-name></span>
+  </a>
+</nav>
+
+<div class="container" id="app">
+  <div class="empty">Chargement…</div>
+</div>
+
+<script>
+const params = new URLSearchParams(window.location.search);
+const token = params.get('token');
+
+const STATUS_LABELS = {
+  submitted: 'Dossier reçu',
+  under_review: 'En cours d’évaluation',
+  scheduled: 'RDV programmé',
+  in_treatment: 'Prise en charge en cours',
+  completed: 'Soins terminés',
+  declined: 'Non retenu',
+};
+const EVENT_LABELS = {
+  submitted: 'Dossier soumis',
+  status_changed: 'Statut modifié',
+  note: 'Note',
+  linked_to_patient: 'Dossier lié à votre patient chez nous',
+  link_resent: 'Lien de suivi renvoyé',
+};
+const FILE_LABELS = { referral_letter: 'Dossier', radiograph: 'Radio', other: 'Document' };
+
+function fmtDate(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (isNaN(d)) return iso;
+  return d.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+}
+function fmtDateTime(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (isNaN(d)) return iso;
+  return d.toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
+
+function renderError() {
+  document.getElementById('app').innerHTML = `
+    <div class="card">
+      <div class="error-screen">
+        <h1>Lien invalide ou expiré</h1>
+        <p class="muted" style="margin-top:10px;">
+          Ce lien de suivi n'est plus valide. Vous pouvez en demander un nouveau ci-dessous.
+        </p>
+      </div>
+      <h2 style="margin-top:10px;">Recevoir un nouveau lien</h2>
+      <div class="resend-form">
+        <input type="text" id="r_reference" placeholder="Référence du dossier (ex. REF-2026-0001)">
+        <input type="email" id="r_email" placeholder="Votre email">
+        <button class="btn" onclick="resendLink()">Envoyer</button>
+      </div>
+      <div id="resendMsg"></div>
+    </div>
+  `;
+}
+
+async function resendLink() {
+  const reference = document.getElementById('r_reference').value.trim();
+  const email = document.getElementById('r_email').value.trim();
+  const msgEl = document.getElementById('resendMsg');
+  if (!reference || !email) return;
+  try {
+    const r = await fetch('/api/public/referrals/resend', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reference, email }),
+    });
+    const result = await r.json();
+    msgEl.innerHTML = `<div class="success-msg">${escapeHtml(result.message || result.error || '')}</div>`;
+  } catch (e) {
+    msgEl.innerHTML = `<div class="success-msg">Si les informations correspondent à un dossier, un e-mail a été envoyé.</div>`;
+  }
+}
+
+function fileUrl(fileId) {
+  return `/api/public/referrals/file/${fileId}?token=${encodeURIComponent(token)}`;
+}
+
+function renderCase(c) {
+  const files = (c.files || []).map((f) =>
+    `<a class="file-link" href="${escapeHtml(fileUrl(f.id))}" target="_blank">📎 ${escapeHtml(FILE_LABELS[f.category] || f.category)} — ${escapeHtml(f.originalName)}</a>`
+  ).join('');
+
+  const timeline = (c.events || []).map((ev) => `
+    <li>
+      <span>${escapeHtml(EVENT_LABELS[ev.type] || ev.type)}${ev.toStatus ? ' → ' + escapeHtml(STATUS_LABELS[ev.toStatus] || ev.toStatus) : ''}${ev.note ? '<br><span class="muted">' + escapeHtml(ev.note) + '</span>' : ''}</span>
+      <span class="when">${escapeHtml(fmtDateTime(ev.createdAt))}</span>
+    </li>
+  `).join('');
+
+  let clinicalSection = '';
+  if (c.linked) {
+    const records = (c.records || []).map((r) => `
+      <tr>
+        <td>${escapeHtml(fmtDate(r.date))}</td>
+        <td>${escapeHtml(r.type || '')}</td>
+        <td><strong>${escapeHtml(r.title || '')}</strong>${r.description ? '<br><span class="muted">' + escapeHtml(r.description) + '</span>' : ''}${r.treatment ? '<br><em>Traitement : ' + escapeHtml(r.treatment) + '</em>' : ''}</td>
+      </tr>
+    `).join('');
+    const followUps = (c.followUps || []).map((f) => `
+      <tr><td>${escapeHtml(fmtDate(f.scheduledDate))}</td><td>${escapeHtml(f.title || '')}</td><td>${escapeHtml(f.status || '')}</td></tr>
+    `).join('');
+
+    clinicalSection = `
+      <div class="card">
+        <h2>Dossier médical de ${escapeHtml(c.patientName)}</h2>
+        ${c.patient ? `<p class="muted" style="margin-bottom:14px;">${escapeHtml(c.patient.species || '')} ${c.patient.breed ? '— ' + escapeHtml(c.patient.breed) : ''}${c.patient.sex ? ' — ' + (c.patient.sex === 'M' ? 'Mâle' : 'Femelle') : ''}</p>` : ''}
+        ${records.length ? `<table><thead><tr><th>Date</th><th>Type</th><th>Détail</th></tr></thead><tbody>${records}</tbody></table>` : '<div class="empty">Aucun acte enregistré pour l\'instant.</div>'}
+      </div>
+      ${followUps.length ? `
+      <div class="card">
+        <h2>Rappels programmés</h2>
+        <table><thead><tr><th>Date</th><th>Objet</th><th>Statut</th></tr></thead><tbody>${followUps}</tbody></table>
+      </div>` : ''}
+    `;
+  }
+
+  document.getElementById('app').innerHTML = `
+    <div class="promise-banner">
+      <span class="icon">🔗</span>
+      <span class="txt"><strong>Bonjour Dr ${escapeHtml(c.referringVetName)}, afin que vous puissiez suivre au mieux vos patients référés chez nous,
+      vous trouverez ici toutes les mises à jour de leur dossier.</strong></span>
+    </div>
+
+    <div class="card">
+      <div class="status-badge">${escapeHtml(STATUS_LABELS[c.status] || c.status)}</div>
+      <h1>${escapeHtml(c.patientName)} — ${escapeHtml(c.reference)}</h1>
+      <p class="muted">Dossier transmis le ${escapeHtml(fmtDate(c.createdAt))}</p>
+      ${c.reasonForReferral ? `<p style="margin-top:10px;"><strong>Motif du renvoi :</strong> ${escapeHtml(c.reasonForReferral)}</p>` : ''}
+    </div>
+
+    <div class="card">
+      <h2>Pièces jointes</h2>
+      ${files || '<div class="empty">Aucun fichier pour l\'instant.</div>'}
+    </div>
+
+    ${clinicalSection}
+
+    <div class="card">
+      <h2>Suivi du dossier</h2>
+      <ul class="timeline">${timeline}</ul>
+    </div>
+
+    <div class="card">
+      <h2>Perdu ce lien ?</h2>
+      <p class="muted">Vous pouvez en recevoir un nouveau par email à tout moment.</p>
+      <div class="resend-form">
+        <input type="text" id="r_reference" placeholder="Référence du dossier" value="${escapeHtml(c.reference)}">
+        <input type="email" id="r_email" placeholder="Votre email">
+        <button class="btn" onclick="resendLink()">Envoyer</button>
+      </div>
+      <div id="resendMsg"></div>
+    </div>
+  `;
+}
+
+function escapeHtml(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+async function init() {
+  if (!token) { renderError(); return; }
+  try {
+    const r = await fetch(`/api/public/referrals/case?token=${encodeURIComponent(token)}`);
+    if (!r.ok) { renderError(); return; }
+    const c = await r.json();
+    renderCase(c);
+  } catch (e) {
+    renderError();
+  }
+}
+
+init();
+</script>
+<script>
+// Nom du cabinet et lien vers son site, depuis Paramètres → Cabinet.
+fetch('/api/public/cabinet-info').then((r) => r.json()).then((c) => {
+  document.querySelectorAll('[data-cabinet-name]').forEach((el) => { el.textContent = c.name || ''; });
+  if (c.name && !document.title.includes(c.name)) document.title += ' — ' + c.name;
+  document.querySelectorAll('[data-site-link]').forEach((a) => {
+    if (c.website) a.href = c.website; else if (a.classList.contains('nav-back')) a.style.display = 'none';
+  });
+}).catch(() => {});
+</script>
+</body>
+</html>

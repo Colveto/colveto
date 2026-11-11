@@ -1,0 +1,39 @@
+[Unit]
+Description=Vet Clinic Server
+Documentation=https://github.com/yourorg/vet-clinic
+After=network.target
+
+[Service]
+Type=simple
+User=vetapp
+Group=vetapp
+# Fichiers créés (base, WAL, sauvegardes, pièces jointes) lisibles par vetapp seul.
+UMask=0077
+WorkingDirectory=/opt/vet-clinic
+ExecStart=/usr/bin/node /opt/vet-clinic/server-standalone.js
+Restart=always
+RestartSec=5
+
+# Environment
+Environment=NODE_ENV=production
+Environment=SERVER_PORT=3737
+Environment=SERVER_HOST=127.0.0.1
+Environment=DATA_DIR=/var/lib/vet-clinic
+
+# Security hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/vet-clinic /var/log/vet-clinic
+
+# Limits
+LimitNOFILE=4096
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=vet-clinic
+
+[Install]
+WantedBy=multi-user.target
