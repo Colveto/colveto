@@ -27,6 +27,13 @@ sous licence libre pour que d'autres cabinets puissent l'utiliser, l'adapter et 
 
 ## Installation
 
+**Pour démarrer : [GUIDE.md](GUIDE.md)** — installer, paramétrer et utiliser Colveto pas à pas,
+sans connaissances techniques.
+
+Téléchargement : **[dernière version](https://github.com/Colveto/colveto/releases/latest)**
+(Windows, Mac).
+
+
 Voir **[INSTALL.md](INSTALL.md)** : installation sur un serveur (VPS) avec HTTPS automatique,
 ou essai rapide sur votre ordinateur.
 

@@ -22,7 +22,7 @@ export default function Users() {
   const save = async () => {
     if (!editing.fullName || !editing.username) { alert('Nom et identifiant requis'); return; }
     if (!editing.id && !editing.password) { alert('Mot de passe requis'); return; }
-    if (editing.password && editing.password.length < 6) { alert('Mot de passe trop court (min 6 caractères)'); return; }
+    if (editing.password && editing.password.length < 8) { alert('Mot de passe trop court (min 8 caractères)'); return; }
     if (editing.id) {
       const data = { ...editing };
       if (!data.password) delete data.password;
