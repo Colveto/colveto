@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext.jsx';
+import { TermsText, TermsCheckbox, TERMS_VERSION } from '../components/TermsOfUse.jsx';
 
 // Application de bureau : chaque PC a son propre serveur intégré. Sur le 2e PC
 // d'un cabinet, il faut rejoindre le serveur principal, pas créer un second
@@ -104,6 +105,7 @@ function NewClinic({ onBack }) {
     setupCode: '', fullName: '', username: '', email: '', password: '', confirmPassword: '',
   });
   const [codeRequired, setCodeRequired] = useState(false);
+  const [accepted, setAccepted] = useState(false);
   useEffect(() => {
     window.api.auth.setupStatus().then((r) => setCodeRequired(!!r.setupCodeRequired)).catch(() => {});
   }, []);
@@ -121,6 +123,10 @@ function NewClinic({ onBack }) {
       setError('Le mot de passe doit faire au moins 8 caractères');
       return;
     }
+    if (!accepted) {
+      setError("Veuillez lire et accepter les conditions d'utilisation");
+      return;
+    }
     setBusy(true);
     try {
       await completeSetup({
@@ -129,6 +135,8 @@ function NewClinic({ onBack }) {
         username: form.username.trim().toLowerCase(),
         email: form.email.trim() || null,
         password: form.password,
+        acceptTerms: true,
+        termsVersion: TERMS_VERSION,
       });
     } catch (err) {
       setError(err.message || 'Erreur lors de la création du compte');
@@ -138,7 +146,7 @@ function NewClinic({ onBack }) {
 
   return (
     <div className="auth-page">
-      <form className="auth-card" onSubmit={submit} style={{ maxWidth: 480 }}>
+      <form className="auth-card" onSubmit={submit} style={{ maxWidth: 560 }}>
         <Logo />
         <h1>Bienvenue dans Colveto</h1>
         <p className="text-light text-center mb-4">
@@ -193,9 +201,15 @@ function NewClinic({ onBack }) {
             minLength={8} required />
         </div>
 
+        <div className="form-group mt-2">
+          <label>Conditions d'utilisation</label>
+          <TermsText />
+          <TermsCheckbox checked={accepted} onChange={setAccepted} />
+        </div>
+
         {error && <div className="auth-error">{error}</div>}
 
-        <button className="btn btn-primary" type="submit" disabled={busy}
+        <button className="btn btn-primary" type="submit" disabled={busy || !accepted}
           style={{ width: '100%', marginTop: 16, justifyContent: 'center' }}>
           {busy ? 'Création…' : 'Créer le compte administrateur'}
         </button>

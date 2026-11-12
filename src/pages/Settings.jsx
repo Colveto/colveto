@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { getApiBase, setApiBase } from '../lib/api.js';
 import { useToast } from '../components/Toast.jsx';
 import { useUpdateState } from '../components/UpdateBanner.jsx';
+import { TermsText } from '../components/TermsOfUse.jsx';
 
 export default function Settings() {
   const { showToast } = useToast();
@@ -773,6 +774,16 @@ export default function Settings() {
       </div>
 
       <UpdatesCard settings={settings} set={set} />
+
+      <div className="card">
+        <h3 className="mt-2" style={{ marginTop: 0 }}>📜 Conditions d'utilisation</h3>
+        <p className="text-light" style={{ marginTop: 0 }}>
+          {settings.termsAcceptedAt
+            ? <>Acceptées le {new Date(settings.termsAcceptedAt).toLocaleDateString('fr-FR')}{settings.termsAcceptedBy ? ` par ${settings.termsAcceptedBy}` : ''}.</>
+            : 'Pas encore acceptées.'}
+        </p>
+        <TermsText />
+      </div>
 
       <DataExportCard showToast={showToast} />
 

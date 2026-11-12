@@ -525,12 +525,32 @@ function createServer({ db, userDataPath, distDir: distDirOverride }) {
       recordLoginFailure(req.ip);
       return res.status(403).json({ error: "Code d'installation incorrect.", setupCodeRequired: true });
     }
+    if (req.body.acceptTerms !== true) {
+      return res.status(400).json({ error: "Les conditions d'utilisation doivent être acceptées." });
+    }
     assertPasswordOk(req.body.password);
-    const { setupCode, ...fields } = req.body;
+    const { setupCode, acceptTerms, termsVersion, ...fields } = req.body;
     const user = db.createUser({ ...fields, role: 'admin', active: true });
+    recordTermsAcceptance(user);
     try { fs.unlinkSync(setupCodeFile); } catch { /* déjà supprimé */ }
     const token = jwt.sign({ id: user.id, role: user.role, username: user.username }, JWT_SECRET, { expiresIn: '12h' });
     res.json({ user: { ...user, mustEnroll2fa: needs2faEnrollment(user) }, token });
+  }));
+
+  // Conditions d'utilisation (écran du premier démarrage). La version est
+  // aussi définie dans src/components/TermsOfUse.jsx : les garder identiques.
+  const TERMS_VERSION = '1';
+  function recordTermsAcceptance(user) {
+    db.saveSettings({
+      termsVersion: TERMS_VERSION,
+      termsAcceptedAt: new Date().toISOString(),
+      termsAcceptedBy: user.fullName || user.username,
+    });
+  }
+  app.post('/api/terms/accept', authRequired, requireRole('admin'), wrap((req, res) => {
+    const u = db.db.prepare('SELECT fullName, username FROM users WHERE id = ?').get(req.user.id) || req.user;
+    recordTermsAcceptance(u);
+    res.json({ ok: true, termsVersion: TERMS_VERSION });
   }));
 
   app.post('/api/auth/login', loginLimiter, wrap((req, res) => {
@@ -1703,6 +1723,8 @@ function createServer({ db, userDataPath, distDir: distDirOverride }) {
   app.put('/api/settings', authRequired, requireRole('admin'), wrap((req, res) => {
     const data = { ...req.body };
     if (data.smtpPass === SMTP_PASS_MASK) delete data.smtpPass;
+    // L'accord sur les conditions ne s'enregistre que par /api/terms/accept.
+    delete data.termsVersion; delete data.termsAcceptedAt; delete data.termsAcceptedBy;
     res.json(publicSettings(db.saveSettings(data), req.user.role));
   }));
 

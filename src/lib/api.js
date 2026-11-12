@@ -301,6 +301,9 @@ export const api = {
     update: (id, data) => http('PUT', `/api/monthly-overheads/${id}`, data),
     delete: (id) => http('DELETE', `/api/monthly-overheads/${id}`),
   },
+  terms: {
+    accept: () => http('POST', '/api/terms/accept'),
+  },
   settings: {
     get: () => http('GET', '/api/settings'),
     save: (data) => http('PUT', '/api/settings', data),

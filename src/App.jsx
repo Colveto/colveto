@@ -29,6 +29,7 @@ import RecordPrint from './pages/RecordPrint.jsx';
 import Security, { Mandatory2FA } from './pages/Security.jsx';
 import SetupWizard from './pages/SetupWizard.jsx';
 import Import from './pages/Import.jsx';
+import { TermsText, TermsCheckbox, TERMS_VERSION } from './components/TermsOfUse.jsx';
 import Referrals from './pages/Referrals.jsx';
 import ReferralDetail from './pages/ReferralDetail.jsx';
 import ReferringVets from './pages/ReferringVets.jsx';
@@ -56,17 +57,52 @@ function AppRoutes() {
 }
 
 // Installation neuve : l'administrateur passe d'abord par le paramétrage rapide.
+// Installation existante sans accord (ou accord sur une ancienne version des
+// conditions) : l'administrateur accepte les conditions d'utilisation une fois.
 function SetupGate({ user, children }) {
   const [needed, setNeeded] = useState(user.role === 'admin' ? null : false);
+  const [termsNeeded, setTermsNeeded] = useState(false);
   useEffect(() => {
     if (user.role !== 'admin') return;
     window.api.settings.get()
-      .then((s) => setNeeded(s.setupCompleted === '0'))
+      .then((s) => {
+        setTermsNeeded(s.termsVersion !== TERMS_VERSION);
+        setNeeded(s.setupCompleted === '0');
+      })
       .catch(() => setNeeded(false));
   }, [user.id, user.role]);
   if (needed === null) return <div style={{ padding: 40, textAlign: 'center' }}>Chargement…</div>;
+  if (termsNeeded) return <TermsGate onDone={() => setTermsNeeded(false)} />;
   if (needed) return <SetupWizard onDone={() => setNeeded(false)} />;
   return children;
+}
+
+function TermsGate({ onDone }) {
+  const [accepted, setAccepted] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+  const accept = async () => {
+    setBusy(true); setError(null);
+    try { await window.api.terms.accept(); onDone(); }
+    catch (e) { setError(e.message); setBusy(false); }
+  };
+  return (
+    <div className="auth-page">
+      <div className="auth-card" style={{ maxWidth: 560 }}>
+        <h1>Conditions d'utilisation</h1>
+        <p className="text-light text-center mb-4">
+          À lire et accepter une fois par l'administrateur du cabinet.
+        </p>
+        <TermsText />
+        <TermsCheckbox checked={accepted} onChange={setAccepted} />
+        {error && <div className="auth-error">{error}</div>}
+        <button className="btn btn-primary" onClick={accept} disabled={!accepted || busy}
+          style={{ width: '100%', marginTop: 16, justifyContent: 'center' }}>
+          {busy ? 'Enregistrement…' : 'Accepter et continuer'}
+        </button>
+      </div>
+    </div>
+  );
 }
 
 function MainRoutes({ location }) {

@@ -78,6 +78,11 @@ Saisissez le nom complet, un **identifiant** (sans espace, par exemple `mdupont`
 un **mot de passe** d'au moins 8 caractères. Ce compte a tous les droits : notez bien
 ses informations.
 
+Lisez ensuite les **conditions d'utilisation** affichées sous le formulaire et cochez
+la case pour les accepter au nom du cabinet : Colveto est gratuit et sans garantie, et
+le cabinet reste responsable de ses données, de ses sauvegardes et de ses obligations
+légales. Elles restent consultables dans ⚙️ Paramètres.
+
 > Sur un serveur en ligne, un **code d'installation** est aussi demandé : il
 > s'affiche à la fin de l'installation du serveur. Il empêche quiconque de créer le
 > compte administrateur à votre place.
