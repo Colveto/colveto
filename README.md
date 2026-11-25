@@ -8,7 +8,7 @@ sous licence libre pour que d'autres cabinets puissent l'utiliser, l'adapter et 
 
 ## Fonctionnalités
 
-- **Agenda** : rendez-vous, types de consultation, horaires, blocages
+- **Agenda** : rendez-vous, types de consultation, horaires, blocages ; un agenda par vétérinaire
 - **Prise de rendez-vous en ligne** pour vos clients, avec rappels, confirmation,
   annulation et report par email
 - **Propriétaires et patients** : fiches, dossier médical, modèles de comptes rendus,

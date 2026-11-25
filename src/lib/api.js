@@ -201,6 +201,9 @@ export const api = {
     resultEmailPreview: (id) => http('GET', `/api/lab/results/${id}/email-preview`),
     sendResult: (id, data) => http('POST', `/api/lab/results/${id}/send`, data),
   },
+  vets: {
+    list: () => http('GET', '/api/vets'),
+  },
   appointments: {
     list: (range) => http('GET', '/api/appointments', undefined, range || {}),
     create: (data) => http('POST', '/api/appointments', data),

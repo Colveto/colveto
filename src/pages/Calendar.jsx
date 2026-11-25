@@ -44,6 +44,19 @@ const KIND_LABELS = {
   other: '⏸ Bloqué',
 };
 
+// Couleur d'un vétérinaire dans l'agenda (ordre de création des comptes).
+const VET_COLORS = ['#2563eb', '#db2777', '#059669', '#d97706', '#7c3aed', '#0891b2', '#dc2626', '#4d7c0f'];
+const VET_STORAGE_KEY = 'colveto.agendaVets';
+
+function vetInitials(name) {
+  return (name || '').split(/\s+/).filter(Boolean).map((w) => w[0]).join('').slice(0, 3).toUpperCase();
+}
+
+function loadStoredVets() {
+  try { const v = JSON.parse(localStorage.getItem(VET_STORAGE_KEY) || 'null'); return Array.isArray(v) ? v : null; }
+  catch { return null; }
+}
+
 // Motif affiché dans une case d'agenda : le type de RDV, complété par le motif
 // libre quand il en dit plus. Le texte « Réservation en ligne par … » est le
 // remplissage automatique du formulaire public : il n'apporte rien ici.
@@ -72,6 +85,9 @@ export default function Calendar() {
   const [editingBlock, setEditingBlock] = useState(null);
   const [newOwner, setNewOwner] = useState(null);
   const [newPatient, setNewPatient] = useState(null);
+  // Vétérinaires ayant un agenda, et ceux dont on affiche l'agenda.
+  const [vets, setVets] = useState([]);
+  const [shownVetIds, setShownVetIds] = useState([]);
 
   const openHour = parseInt(settings.cabinetOpenHour || '9', 10);
   const closeHour = parseInt(settings.cabinetCloseHour || '18', 10);
@@ -126,7 +142,7 @@ export default function Calendar() {
     ro.observe(mainEl);
     window.addEventListener('resize', recompute);
     return () => { ro.disconnect(); window.removeEventListener('resize', recompute); };
-  }, [totalSlots, types.length, view]);
+  }, [totalSlots, types.length, view, vets.length]);
 
   // Pixel-perfect nudge: box-model details we don't hand-derive above (card
   // border, collapsed margins, subpixel rounding) can leave a few px of
@@ -164,7 +180,29 @@ export default function Calendar() {
     window.api.owners.list().then(setOwners);
     window.api.patients.list().then(setPatients);
     window.api.settings.get().then(setSettings);
+    window.api.vets.list().then((list) => {
+      setVets(list);
+      const ids = list.map((v) => v.id);
+      const stored = (loadStoredVets() || []).filter((id) => ids.includes(id));
+      // Par défaut : son propre agenda si on est vétérinaire, sinon tous.
+      setShownVetIds(stored.length ? stored : (ids.includes(user?.id) ? [user.id] : ids));
+    }).catch(() => {});
   }, []);
+
+  const multiVet = vets.length > 1;
+  const vetById = useMemo(() => Object.fromEntries(vets.map((v, i) => [v.id, { ...v, color: VET_COLORS[i % VET_COLORS.length] }])), [vets]);
+  // Avec un seul vétérinaire, pas de filtre : tout s'affiche.
+  const isShown = (vetId) => !multiVet || !vetId || shownVetIds.includes(vetId);
+  const toggleVet = (id) => setShownVetIds((prev) => {
+    const next = prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id];
+    try { localStorage.setItem(VET_STORAGE_KEY, JSON.stringify(next)); } catch { /* stockage indisponible */ }
+    return next;
+  });
+  const defaultVetId = () => {
+    if (vets.some((v) => v.id === user?.id)) return user.id;
+    const shown = vets.filter((v) => shownVetIds.includes(v.id));
+    return (shown.length === 1 ? shown[0] : vets[0])?.id || '';
+  };
 
   // Compute event placement
   function eventsForDay(day) {
@@ -173,6 +211,7 @@ export default function Calendar() {
     const items = [];
 
     for (const a of appointments) {
+      if (!isShown(a.vetId)) continue;
       const start = new Date(a.startTime);
       const end = new Date(a.endTime);
       if (end < dayStart || start > dayEnd) continue;
@@ -181,6 +220,7 @@ export default function Calendar() {
 
     // Expand blocks (recurring + single)
     for (const b of blocks) {
+      if (!isShown(b.vetId)) continue;
       const occurrences = expandBlock(b, day);
       for (const occ of occurrences) {
         items.push({ ...b, kind: 'block', startTime: occ.start.toISOString(), endTime: occ.end.toISOString() });
@@ -212,7 +252,7 @@ export default function Calendar() {
       reason: '',
       ownerId: '',
       patientId: '',
-      veterinarian: user?.role === 'veterinarian' ? user.fullName : '',
+      vetId: defaultVetId(),
       status: 'scheduled',
       appointmentTypeId: types[0]?.id || '',
     });
@@ -227,6 +267,7 @@ export default function Calendar() {
       ownerId: appt.ownerId || '',
       patientId: appt.patientId || '',
       appointmentTypeId: appt.appointmentTypeId || '',
+      vetId: appt.vetId || '',
     });
     setShowApptModal(true);
   };
@@ -253,7 +294,9 @@ export default function Calendar() {
       ownerId: editingAppt.ownerId || null,
       patientId: editingAppt.patientId || null,
       appointmentTypeId: editingAppt.appointmentTypeId || null,
+      vetId: editingAppt.vetId || null,
     };
+    if (vets.length > 0 && !data.vetId) { showToast('Choisissez le vétérinaire', 'error'); return; }
     try {
       if (editingAppt.id) await window.api.appointments.update(editingAppt.id, data);
       else {
@@ -300,6 +343,7 @@ export default function Calendar() {
       kind: 'lunch',
       recurrence: '',
       description: '',
+      vetId: '',
     });
     setShowBlockModal(true);
   };
@@ -310,6 +354,7 @@ export default function Calendar() {
       startTime: isoLocal(new Date(block.startTime)),
       endTime: isoLocal(new Date(block.endTime)),
       recurrence: block.recurrence || '',
+      vetId: block.vetId || '',
     });
     setShowBlockModal(true);
   };
@@ -320,6 +365,7 @@ export default function Calendar() {
       startTime: new Date(editingBlock.startTime).toISOString(),
       endTime: new Date(editingBlock.endTime).toISOString(),
       recurrence: editingBlock.recurrence || null,
+      vetId: editingBlock.vetId || null,
     };
     if (editingBlock.id) await window.api.timeBlocks.update(editingBlock.id, data);
     else await window.api.timeBlocks.create(data);
@@ -486,6 +532,20 @@ export default function Calendar() {
         </div>
       </div>
 
+      {multiVet && (
+        <div className="cal-vets mb-2">
+          <span className="text-light" style={{ fontSize: 12 }}>Agendas :</span>
+          {vets.map((v) => (
+            <label key={v.id} className={`cal-vet-chip ${shownVetIds.includes(v.id) ? 'on' : ''}`}
+              style={{ '--vet-color': vetById[v.id]?.color }}>
+              <input type="checkbox" checked={shownVetIds.includes(v.id)} onChange={() => toggleVet(v.id)} />
+              <span className="cal-vet-dot" />
+              {v.fullName}
+            </label>
+          ))}
+        </div>
+      )}
+
       {view === 'day' && (
         <div className="text-light mb-4" style={{ fontSize: 14 }}>
           {fmtDayLong(refDate)}
@@ -507,6 +567,8 @@ export default function Calendar() {
           types={types}
           view={view}
           headerCellRef={headerCellRef}
+          vetById={vetById}
+          showVetTag={multiVet && shownVetIds.length !== 1}
         />
       </div>
 
@@ -648,9 +710,17 @@ export default function Calendar() {
                 onChange={(e) => setEditingAppt({ ...editingAppt, reason: e.target.value })} />
             </div>
             <div className="form-group">
-              <label>Vétérinaire</label>
-              <input className="input" value={editingAppt.veterinarian || ''}
-                onChange={(e) => setEditingAppt({ ...editingAppt, veterinarian: e.target.value })} />
+              <label>Vétérinaire{vets.length > 0 ? ' *' : ''}</label>
+              {vets.length > 0 ? (
+                <select className="select" value={editingAppt.vetId || ''}
+                  onChange={(e) => setEditingAppt({ ...editingAppt, vetId: e.target.value })}>
+                  {!editingAppt.vetId && <option value="">— Non attribué —</option>}
+                  {vets.map((v) => <option key={v.id} value={v.id}>{v.fullName}</option>)}
+                </select>
+              ) : (
+                <input className="input" value={editingAppt.veterinarian || ''}
+                  onChange={(e) => setEditingAppt({ ...editingAppt, veterinarian: e.target.value })} />
+              )}
             </div>
           </div>
           <div className="form-row cols-1">
@@ -830,6 +900,18 @@ export default function Calendar() {
                 onChange={(e) => setEditingBlock({ ...editingBlock, endTime: e.target.value })} />
             </div>
           </div>
+          {vets.length > 1 && (
+            <div className="form-row cols-1">
+              <div className="form-group">
+                <label>Concerne</label>
+                <select className="select" value={editingBlock.vetId || ''}
+                  onChange={(e) => setEditingBlock({ ...editingBlock, vetId: e.target.value })}>
+                  <option value="">Tout le cabinet</option>
+                  {vets.map((v) => <option key={v.id} value={v.id}>{v.fullName} uniquement</option>)}
+                </select>
+              </div>
+            </div>
+          )}
           <div className="form-row cols-1">
             <div className="form-group">
               <label>Récurrence</label>
@@ -918,7 +1000,7 @@ function layoutOverlaps(events) {
   return layout;
 }
 
-function CalendarGrid({ days, openHour, closeHour, slotMinutes, slotPx, eventsForDay, eventStyle, onSlotClick, onApptClick, onBlockClick, view, headerCellRef }) {
+function CalendarGrid({ days, openHour, closeHour, slotMinutes, slotPx, eventsForDay, eventStyle, onSlotClick, onApptClick, onBlockClick, view, headerCellRef, vetById = {}, showVetTag = false }) {
   const slotsPerHour = Math.floor(60 / slotMinutes);
   const hours = Array.from({ length: closeHour - openHour }, (_, i) => openHour + i);
 
@@ -984,9 +1066,12 @@ function CalendarGrid({ days, openHour, closeHour, slotMinutes, slotPx, eventsFo
                     className="cal-block"
                     style={style}
                     onClick={(ev) => { ev.stopPropagation(); onBlockClick(e); }}
-                    title={e.title + (e.description ? ' — ' + e.description : '')}
+                    title={e.title + (e.description ? ' — ' + e.description : '') + (vetById[e.vetId] ? ' — ' + vetById[e.vetId].fullName : '')}
                   >
                     <div className="cal-block-content">
+                      {showVetTag && vetById[e.vetId] && (
+                        <span className="cal-vet-tag" style={{ background: vetById[e.vetId].color }}>{vetInitials(vetById[e.vetId].fullName)}</span>
+                      )}
                       {KIND_LABELS[e.kind] || '⏸'} {e.title}
                     </div>
                   </div>
@@ -1007,6 +1092,10 @@ function CalendarGrid({ days, openHour, closeHour, slotMinutes, slotPx, eventsFo
               // et rejoint le patient, pour laisser une ligne entière au motif.
               const shortOwner = e.ownerLastName || owner;
               const parts = [patient, shortOwner, motif].filter(Boolean);
+              const vet = vetById[e.vetId];
+              const vetTag = showVetTag && vet
+                ? <span className="cal-vet-tag" style={{ background: vet.color }}>{vetInitials(vet.fullName)}</span>
+                : null;
               return (
                 <div
                   key={`a-${e.id}-${idx}`}
@@ -1017,17 +1106,17 @@ function CalendarGrid({ days, openHour, closeHour, slotMinutes, slotPx, eventsFo
                     borderLeft: `4px solid ${color}`,
                   }}
                   onClick={(ev) => { ev.stopPropagation(); onApptClick(e); }}
-                  title={[`${time} — ${patient || 'Sans patient'}`, owner, motif].filter(Boolean).join('\n')}
+                  title={[`${time} — ${patient || 'Sans patient'}`, owner, motif, vet ? `Vétérinaire : ${vet.fullName}` : (e.vetName || '')].filter(Boolean).join('\n')}
                 >
                   {lines === 1 ? (
                     <div className="cal-appt-line">
-                      <span className="cal-appt-time">{time}</span>
+                      {vetTag}<span className="cal-appt-time">{time}</span>
                       {parts.join(' · ')}
                     </div>
                   ) : lines === 2 ? (
                     <>
                       <div className="cal-appt-line">
-                        <span className="cal-appt-time">{time}</span>
+                        {vetTag}<span className="cal-appt-time">{time}</span>
                         <span className="cal-appt-patient">{patient}</span>
                         {patient && shortOwner ? ' · ' : ''}{shortOwner}
                       </div>
@@ -1036,7 +1125,7 @@ function CalendarGrid({ days, openHour, closeHour, slotMinutes, slotPx, eventsFo
                   ) : (
                     <>
                       <div className="cal-appt-line">
-                        <span className="cal-appt-time">{time}</span>
+                        {vetTag}<span className="cal-appt-time">{time}</span>
                         <span className="cal-appt-patient">{patient}</span>
                       </div>
                       <div className="cal-appt-line cal-appt-sub">{owner}</div>

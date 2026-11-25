@@ -1,6 +1,6 @@
 {
   "name": "colveto",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "Colveto — un logiciel par un véto, pour des vétos. Gestion de cabinet vétérinaire (rendez-vous, dossiers patients, facturation, export Sage).",
   "main": "electron/main.js",
   "author": "Colveto contributors",

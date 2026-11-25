@@ -185,6 +185,20 @@
   }
   .type-name { flex: 1; font-weight: 500; }
 
+  .vet-pick { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+  .vet-pick .vet-label { width: 100%; font-weight: 600; font-size: 0.95rem; }
+  .vet-btn {
+    padding: 8px 14px;
+    border: 1.5px solid var(--border, #e5e7eb);
+    border-radius: 999px;
+    background: var(--white, #fff);
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 0.95rem;
+    color: var(--text);
+  }
+  .vet-btn:hover { border-color: var(--blue); }
+  .vet-btn.selected { border-color: var(--blue); background: var(--blue-soft); font-weight: 600; }
   .day-pick {
     display: flex;
     gap: 8px;
@@ -593,6 +607,7 @@
   <!-- Step 2: Date + Slot -->
   <div class="card hidden" id="step2">
     <h2 data-t-html="step2Q">Choisissez votre <em>créneau</em></h2>
+    <div class="vet-pick hidden" id="vetPick"></div>
     <div class="day-pick" id="dayPick"></div>
     <div id="slotsContainer">
       <div class="empty-slots" data-t="selectDayHint">Sélectionnez un jour pour voir les créneaux disponibles.</div>
@@ -679,7 +694,7 @@
 </div>
 
 <script>
-const state = { type: null, day: null, slot: null, types: [], availableDays: null, availableDaysType: null };
+const state = { type: null, day: null, slot: null, types: [], availableDays: null, availableDaysType: null, vets: [], vetId: '' };
 
 const TRANSLATIONS = {
   fr: {
@@ -727,6 +742,9 @@ const TRANSLATIONS = {
     waitingFor: 'Nous vous attendons',
     successInfo: 'Un email de confirmation va vous être envoyé.<br>Si vous devez annuler ou reporter, contactez le cabinet.',
     recapLabel: 'Récapitulatif',
+    vetQ: 'Avec quel vétérinaire ?',
+    anyVet: 'Sans préférence',
+    withVet: 'avec',
     locale: 'fr-FR',
   },
   en: {
@@ -774,6 +792,9 @@ const TRANSLATIONS = {
     waitingFor: "We'll see you on",
     successInfo: 'A confirmation email will be sent shortly.<br>To cancel or reschedule, please contact the clinic.',
     recapLabel: 'Summary',
+    vetQ: 'Which vet would you like to see?',
+    anyVet: 'No preference',
+    withVet: 'with',
     locale: 'en-GB',
   },
 };
@@ -819,6 +840,7 @@ function setLang(lang) {
   rebuildDayPicker();
   if (state.day) selectDay(state.day);
   if (state.slot) updateRecap();
+  renderVets();
 }
 
 async function api(path) {
@@ -852,24 +874,62 @@ async function init() {
   }
 
   state.cabinetInfo = cabinetInfo;
+
+  // Plusieurs vétérinaires : le client peut choisir. Avec un seul, rien ne
+  // s'affiche et le serveur lui attribue le RDV.
+  try {
+    state.vets = await api('/api/public/vets');
+  } catch (e) { state.vets = []; }
+  renderVets();
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+function renderVets() {
+  const el = document.getElementById('vetPick');
+  if (state.vets.length < 2) { el.classList.add('hidden'); el.innerHTML = ''; return; }
+  el.classList.remove('hidden');
+  const opts = [{ id: '', name: t('anyVet') }].concat(state.vets);
+  el.innerHTML = '<div class="vet-label">' + t('vetQ') + '</div>' + opts.map((v) =>
+    `<button type="button" class="vet-btn${state.vetId === v.id ? ' selected' : ''}" data-id="${escapeHtml(v.id)}">${escapeHtml(v.name)}</button>`
+  ).join('');
+  el.querySelectorAll('.vet-btn').forEach((b) => b.addEventListener('click', () => selectVet(b.dataset.id)));
+}
+
+function selectVet(id) {
+  if (state.vetId === id) return;
+  state.vetId = id;
+  state.day = null;
+  state.slot = null;
+  renderVets();
+  document.getElementById('slotsContainer').innerHTML =
+    '<div class="empty-slots" data-t="selectDayHint">' + t('selectDayHint') + '</div>';
+  rebuildDayPicker();
+}
+
+function vetParam() {
+  return state.vetId ? '&vetId=' + encodeURIComponent(state.vetId) : '';
 }
 
 async function rebuildDayPicker() {
   const pick = document.getElementById('dayPick');
   if (!state.type) { pick.innerHTML = ''; return; }
   const typeId = state.type.id;
-  let days = state.availableDaysType === typeId ? state.availableDays : null;
+  const cacheKey = typeId + '|' + state.vetId;
+  let days = state.availableDaysType === cacheKey ? state.availableDays : null;
   if (!days) {
     pick.innerHTML = '<div class="day-msg">' + t('loadingDays') + '</div>';
     try {
-      days = await api('/api/public/available-days?typeId=' + encodeURIComponent(typeId));
+      days = await api('/api/public/available-days?typeId=' + encodeURIComponent(typeId) + vetParam());
     } catch (e) {
       pick.innerHTML = '<div class="day-msg">' + t('loadingError') + '</div>';
       return;
     }
-    if (!state.type || state.type.id !== typeId) return; // motif changé entre-temps
+    if (!state.type || state.type.id + '|' + state.vetId !== cacheKey) return; // motif ou vétérinaire changé entre-temps
     state.availableDays = days;
-    state.availableDaysType = typeId;
+    state.availableDaysType = cacheKey;
   }
   if (!days.length) {
     pick.innerHTML = '<div class="day-msg">' + t('noDays') + '</div>';
@@ -924,7 +984,7 @@ async function selectDay(iso) {
   document.getElementById('slotsContainer').innerHTML =
     '<div class="empty-slots">' + t('loadingSlots') + '</div>';
   try {
-    const slots = await api(`/api/public/availability?date=${iso}&typeId=${state.type.id}`);
+    const slots = await api(`/api/public/availability?date=${iso}&typeId=${state.type.id}` + vetParam());
     if (slots.length === 0) {
       document.getElementById('slotsContainer').innerHTML =
         '<div class="empty-slots">' + t('noSlots') + '</div>';
@@ -988,7 +1048,12 @@ function updateRecap() {
   const time = String(start.getHours()).padStart(2, '0') + 'h' + String(start.getMinutes()).padStart(2, '0');
   document.getElementById('recap').innerHTML =
     `<div class="label">${t('recapLabel')}</div>` +
-    `<div class="content">${state.type.name} — ${dow} ${date} à ${time}</div>`;
+    `<div class="content">${state.type.name} — ${dow} ${date} à ${time}${vetRecap()}</div>`;
+}
+
+function vetRecap() {
+  const v = state.vetId && state.vets.find((x) => x.id === state.vetId);
+  return v ? ' — ' + t('withVet') + ' ' + escapeHtml(v.name) : '';
 }
 
 async function submitBooking() {
@@ -1008,6 +1073,7 @@ async function submitBooking() {
     typeId: state.type.id,
     lang: LANG,
   };
+  if (state.vetId) data.vetId = state.vetId;
   for (const [k, v] of Object.entries(data)) {
     if (['breed', 'reason'].includes(k)) continue;
     if (!v) {

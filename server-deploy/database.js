@@ -481,6 +481,28 @@ class Database {
       );
       CREATE INDEX IF NOT EXISTS idx_vamreg_status ON vamreg_declarations(status);
     `);
+    // Plusieurs vétérinaires : un compte « vétérinaire » a son propre agenda.
+    // Le drapeau est distinct du rôle (un admin peut être vétérinaire ou non ;
+    // un compte technique comme la station labo ne l'est jamais).
+    let isVetAdded = false;
+    try { this.db.exec('ALTER TABLE users ADD COLUMN isVet INTEGER NOT NULL DEFAULT 0'); isVetAdded = true; } catch (e) { /* already exists */ }
+    if (isVetAdded) {
+      this.db.exec("UPDATE users SET isVet = 1 WHERE role IN ('admin', 'veterinarian')");
+    }
+    // RDV et blocages rattachés à un compte vétérinaire (blocage sans vétérinaire
+    // = tout le cabinet). L'ancien champ texte `veterinarian` reste rempli avec
+    // le nom, pour l'historique et l'affichage.
+    let apptVetAdded = false;
+    try { this.db.exec('ALTER TABLE appointments ADD COLUMN vetId TEXT'); apptVetAdded = true; } catch (e) { /* already exists */ }
+    try { this.db.exec('ALTER TABLE time_blocks ADD COLUMN vetId TEXT'); } catch (e) { /* already exists */ }
+    this.db.exec('CREATE INDEX IF NOT EXISTS idx_appointments_vet ON appointments(vetId)');
+    if (apptVetAdded) {
+      // Tant qu'il n'y a qu'un vétérinaire, tous les RDV existants sont les siens.
+      const vets = this.db.prepare("SELECT id, fullName FROM users WHERE isVet = 1 AND active = 1").all();
+      if (vets.length === 1) {
+        this.db.prepare('UPDATE appointments SET vetId = ?').run(vets[0].id);
+      }
+    }
     // Faits légaux/administratifs rattachés au patient (déclaration chien
     // dangereux, date d'identification électronique).
     const patientLegalCols = [
@@ -902,13 +924,27 @@ class Database {
 
   listUsers() {
     return this.db.prepare(
-      'SELECT id, username, fullName, email, role, active, createdAt, lastLogin, vetOrderNumber FROM users ORDER BY fullName'
+      'SELECT id, username, fullName, email, role, active, createdAt, lastLogin, vetOrderNumber, isVet FROM users ORDER BY fullName'
     ).all();
+  }
+
+  // Comptes qui ont un agenda : vétérinaires actifs, jamais les comptes labo.
+  listVets() {
+    return this.db.prepare(
+      "SELECT id, fullName FROM users WHERE isVet = 1 AND active = 1 AND role <> 'lab' ORDER BY createdAt, fullName"
+    ).all();
+  }
+
+  // Nom affiché du vétérinaire d'un RDV, gardé dans l'ancien champ texte.
+  vetNameFor(vetId) {
+    if (!vetId) return null;
+    const row = this.db.prepare('SELECT fullName FROM users WHERE id = ?').get(vetId);
+    return row ? row.fullName : null;
   }
 
   getUser(id) {
     return this.db.prepare(
-      'SELECT id, username, fullName, email, role, active, createdAt, lastLogin, totpEnabled, vetOrderNumber FROM users WHERE id = ?'
+      'SELECT id, username, fullName, email, role, active, createdAt, lastLogin, totpEnabled, vetOrderNumber, isVet FROM users WHERE id = ?'
     ).get(id);
   }
 
@@ -966,6 +1002,10 @@ class Database {
       now, now
     );
     if (data.vetOrderNumber) this.updateUser(id, { vetOrderNumber: data.vetOrderNumber });
+    // Sans précision, un admin ou un vétérinaire a un agenda ; jamais un compte labo.
+    const role = data.role || 'assistant';
+    const isVet = data.isVet !== undefined ? !!data.isVet : (role === 'admin' || role === 'veterinarian');
+    this.db.prepare('UPDATE users SET isVet = ? WHERE id = ?').run(isVet && role !== 'lab' ? 1 : 0, id);
     return this.getUser(id);
   }
 
@@ -989,6 +1029,7 @@ class Database {
       }
       fields.push('vetOrderNumber = ?'); values.push(n || null);
     }
+    if (data.isVet !== undefined) { fields.push('isVet = ?'); values.push(data.isVet ? 1 : 0); }
     if (data.password) {
       fields.push('passwordHash = ?');
       values.push(bcrypt.hashSync(data.password, 10));
@@ -999,6 +1040,8 @@ class Database {
     if (fields.length === 0) return this.getUser(id);
     values.push(id);
     this.db.prepare(`UPDATE users SET ${fields.join(', ')} WHERE id = ?`).run(...values);
+    // Un compte labo (station d’analyses) n'est jamais un vétérinaire, quel que soit le formulaire.
+    this.db.prepare("UPDATE users SET isVet = 0 WHERE id = ? AND role = 'lab'").run(id);
     return this.getUser(id);
   }
 
@@ -1396,20 +1439,21 @@ class Database {
   createTimeBlock(data) {
     const id = randomUUID();
     this.db.prepare(`
-      INSERT INTO time_blocks (id, startTime, endTime, title, description, kind, recurrence, createdAt, createdBy)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO time_blocks (id, startTime, endTime, title, description, kind, recurrence, createdAt, createdBy, vetId)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(id, data.startTime, data.endTime, data.title,
       data.description || null, data.kind || 'other',
-      data.recurrence || null, new Date().toISOString(), data.createdBy || null);
+      data.recurrence || null, new Date().toISOString(), data.createdBy || null,
+      data.vetId || null);
     return this.db.prepare('SELECT * FROM time_blocks WHERE id = ?').get(id);
   }
   updateTimeBlock(id, data) {
     this.db.prepare(`
-      UPDATE time_blocks SET startTime=?, endTime=?, title=?, description=?, kind=?, recurrence=?
+      UPDATE time_blocks SET startTime=?, endTime=?, title=?, description=?, kind=?, recurrence=?, vetId=?
       WHERE id=?
     `).run(data.startTime, data.endTime, data.title,
       data.description || null, data.kind || 'other',
-      data.recurrence || null, id);
+      data.recurrence || null, data.vetId || null, id);
     return this.db.prepare('SELECT * FROM time_blocks WHERE id = ?').get(id);
   }
   deleteTimeBlock(id) {
@@ -1423,11 +1467,13 @@ class Database {
       SELECT a.*,
         p.name as patientName, p.species,
         o.firstName as ownerFirstName, o.lastName as ownerLastName, o.phone as ownerPhone,
-        t.name as typeName, t.color as typeColor, t.defaultDuration as typeDuration
+        t.name as typeName, t.color as typeColor, t.defaultDuration as typeDuration,
+        u.fullName as vetName
       FROM appointments a
       LEFT JOIN patients p ON p.id = a.patientId
       LEFT JOIN owners o ON o.id = a.ownerId
       LEFT JOIN appointment_types t ON t.id = a.appointmentTypeId
+      LEFT JOIN users u ON u.id = a.vetId
     `;
     const params = [];
     if (range && range.startDate && range.endDate) {
@@ -1440,90 +1486,29 @@ class Database {
   createAppointment(data) {
     const id = randomUUID();
     this.db.prepare(`
-      INSERT INTO appointments (id, patientId, ownerId, startTime, endTime, title, reason, status, veterinarian, notes, appointmentTypeId, createdAt, createdBy)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO appointments (id, patientId, ownerId, startTime, endTime, title, reason, status, veterinarian, notes, appointmentTypeId, createdAt, createdBy, vetId)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(id, data.patientId || null, data.ownerId || null,
       data.startTime, data.endTime, data.title,
       data.reason || null, data.status || 'scheduled',
-      data.veterinarian || null, data.notes || null,
+      this.vetNameFor(data.vetId) || data.veterinarian || null, data.notes || null,
       data.appointmentTypeId || null,
-      new Date().toISOString(), data.createdBy || null);
+      new Date().toISOString(), data.createdBy || null, data.vetId || null);
     return this.db.prepare('SELECT * FROM appointments WHERE id = ?').get(id);
   }
   updateAppointment(id, data) {
     this.db.prepare(`
-      UPDATE appointments SET patientId=?, ownerId=?, startTime=?, endTime=?, title=?, reason=?, status=?, veterinarian=?, notes=?, appointmentTypeId=?
+      UPDATE appointments SET patientId=?, ownerId=?, startTime=?, endTime=?, title=?, reason=?, status=?, veterinarian=?, notes=?, appointmentTypeId=?, vetId=?
       WHERE id=?
     `).run(data.patientId || null, data.ownerId || null,
       data.startTime, data.endTime, data.title,
       data.reason || null, data.status || 'scheduled',
-      data.veterinarian || null, data.notes || null,
-      data.appointmentTypeId || null, id);
+      this.vetNameFor(data.vetId) || data.veterinarian || null, data.notes || null,
+      data.appointmentTypeId || null, data.vetId || null, id);
     return this.db.prepare('SELECT * FROM appointments WHERE id = ?').get(id);
   }
   deleteAppointment(id) {
     this.db.prepare('DELETE FROM appointments WHERE id = ?').run(id);
-    return { success: true };
-  }
-
-  // ===== Appointment types =====
-  listAppointmentTypes() {
-    return this.db.prepare('SELECT * FROM appointment_types ORDER BY sortOrder, name').all();
-  }
-  createAppointmentType(data) {
-    const id = randomUUID();
-    this.db.prepare(`
-      INSERT INTO appointment_types (id, name, defaultDuration, color, description, sortOrder)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `).run(id, data.name, data.defaultDuration || 30, data.color || '#2563eb',
-      data.description || null, data.sortOrder || 0);
-    return this.db.prepare('SELECT * FROM appointment_types WHERE id = ?').get(id);
-  }
-  updateAppointmentType(id, data) {
-    this.db.prepare(`
-      UPDATE appointment_types SET name=?, defaultDuration=?, color=?, description=?, sortOrder=?
-      WHERE id=?
-    `).run(data.name, data.defaultDuration, data.color, data.description || null,
-      data.sortOrder || 0, id);
-    return this.db.prepare('SELECT * FROM appointment_types WHERE id = ?').get(id);
-  }
-  deleteAppointmentType(id) {
-    this.db.prepare('DELETE FROM appointment_types WHERE id = ?').run(id);
-    return { success: true };
-  }
-
-  // ===== Time blocks =====
-  listTimeBlocks(range) {
-    let query = `SELECT * FROM time_blocks`;
-    const params = [];
-    if (range && range.startDate && range.endDate) {
-      query += ' WHERE (startTime <= ? AND endTime >= ?) OR recurrence IS NOT NULL';
-      params.push(range.endDate, range.startDate);
-    }
-    query += ' ORDER BY startTime ASC';
-    return this.db.prepare(query).all(...params);
-  }
-  createTimeBlock(data) {
-    const id = randomUUID();
-    this.db.prepare(`
-      INSERT INTO time_blocks (id, startTime, endTime, title, description, kind, recurrence, createdAt, createdBy)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(id, data.startTime, data.endTime, data.title,
-      data.description || null, data.kind || 'other',
-      data.recurrence || null, new Date().toISOString(), data.createdBy || null);
-    return this.db.prepare('SELECT * FROM time_blocks WHERE id = ?').get(id);
-  }
-  updateTimeBlock(id, data) {
-    this.db.prepare(`
-      UPDATE time_blocks SET startTime=?, endTime=?, title=?, description=?, kind=?, recurrence=?
-      WHERE id=?
-    `).run(data.startTime, data.endTime, data.title,
-      data.description || null, data.kind || 'other',
-      data.recurrence || null, id);
-    return this.db.prepare('SELECT * FROM time_blocks WHERE id = ?').get(id);
-  }
-  deleteTimeBlock(id) {
-    this.db.prepare('DELETE FROM time_blocks WHERE id = ?').run(id);
     return { success: true };
   }
 

@@ -655,3 +655,47 @@ a:hover { text-decoration: underline; }
   .cal-appt { font-size: 11px; }
   .cal-appt, .cal-block { padding: 3px 6px; }
 }
+
+/* Plusieurs vétérinaires : choix des agendas affichés + étiquette sur les RDV. */
+.cal-vets {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.cal-vet-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: white;
+  font-size: 12px;
+  cursor: pointer;
+  opacity: 0.6;
+  user-select: none;
+}
+.cal-vet-chip.on {
+  opacity: 1;
+  border-color: var(--vet-color);
+  background: color-mix(in srgb, var(--vet-color) 10%, white);
+}
+.cal-vet-chip input { margin: 0; }
+.cal-vet-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--vet-color);
+}
+.cal-vet-tag {
+  display: inline-block;
+  color: white;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1;
+  padding: 2px 4px;
+  border-radius: 3px;
+  margin-right: 4px;
+  vertical-align: 1px;
+}

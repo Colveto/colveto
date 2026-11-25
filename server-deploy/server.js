@@ -1101,6 +1101,31 @@ function createServer({ db, userDataPath, distDir: distDirOverride }) {
     return `Ce client est adressé par ${by} : seuls les motifs suivants sont possibles — ${names.join(', ')}.`;
   }
 
+  // ===== Vétérinaires (comptes qui ont un agenda) =====
+  app.get('/api/vets', authRequired, wrap((req, res) => res.json(db.listVets())));
+
+  // Vétérinaire d'un RDV : celui choisi s'il a bien un agenda ; sinon l'auteur
+  // s'il est vétérinaire ; sinon le seul vétérinaire du cabinet s'il n'y en a qu'un.
+  function resolveApptVet(body, user) {
+    const vets = db.listVets();
+    if (body.vetId) {
+      if (!vets.some((v) => v.id === body.vetId)) {
+        throw Object.assign(new Error('Ce compte n\'est pas un vétérinaire actif.'), { status: 400 });
+      }
+      return body.vetId;
+    }
+    if (user && vets.some((v) => v.id === user.id)) return user.id;
+    if (vets.length === 1) return vets[0].id;
+    return null;
+  }
+  // Blocage : vétérinaire précis, ou aucun = tout le cabinet.
+  function checkBlockVet(body) {
+    if (body.vetId && !db.listVets().some((v) => v.id === body.vetId)) {
+      throw Object.assign(new Error('Ce compte n\'est pas un vétérinaire actif.'), { status: 400 });
+    }
+    return body.vetId || null;
+  }
+
   // ===== Appointments =====
   app.get('/api/appointments', authRequired, wrap((req, res) => {
     const range = (req.query.startDate && req.query.endDate)
@@ -1111,7 +1136,7 @@ function createServer({ db, userDataPath, distDir: distDirOverride }) {
   app.post('/api/appointments', authRequired, wrap(async (req, res) => {
     const refusal = referralTypeRefusal(req.body.ownerId, req.body.appointmentTypeId);
     if (refusal) return res.status(400).json({ error: refusal });
-    const appt = db.createAppointment({ ...req.body, createdBy: req.user.id });
+    const appt = db.createAppointment({ ...req.body, vetId: resolveApptVet(req.body, req.user), createdBy: req.user.id });
 
     // Confirmation au propriétaire, à la demande (case du popup de l'agenda).
     // Le RDV reste créé même si le mail échoue : l'erreur est renvoyée à l'écran.
@@ -1147,7 +1172,11 @@ function createServer({ db, userDataPath, distDir: distDirOverride }) {
   app.put('/api/appointments/:id', authRequired, wrap((req, res) => {
     const refusal = referralTypeRefusal(req.body.ownerId, req.body.appointmentTypeId);
     if (refusal) return res.status(400).json({ error: refusal });
-    const appt = db.updateAppointment(req.params.id, req.body);
+    // Un RDV existant garde son vétérinaire tant qu'on n'en choisit pas un autre.
+    const current = db.db.prepare('SELECT vetId FROM appointments WHERE id = ?').get(req.params.id);
+    if (!current) return res.status(404).json({ error: 'Rendez-vous introuvable' });
+    const vetId = req.body.vetId ? resolveApptVet(req.body, req.user) : (current.vetId || resolveApptVet({}, req.user));
+    const appt = db.updateAppointment(req.params.id, { ...req.body, vetId });
     res.json(appt);
   }));
   app.delete('/api/appointments/:id', authRequired, wrap((req, res) => {
@@ -1177,10 +1206,10 @@ function createServer({ db, userDataPath, distDir: distDirOverride }) {
     res.json(db.listTimeBlocks(range));
   }));
   app.post('/api/time-blocks', authRequired, wrap((req, res) =>
-    res.json(db.createTimeBlock({ ...req.body, createdBy: req.user.id }))
+    res.json(db.createTimeBlock({ ...req.body, vetId: checkBlockVet(req.body), createdBy: req.user.id }))
   ));
   app.put('/api/time-blocks/:id', authRequired, wrap((req, res) =>
-    res.json(db.updateTimeBlock(req.params.id, req.body))
+    res.json(db.updateTimeBlock(req.params.id, { ...req.body, vetId: checkBlockVet(req.body) }))
   ));
   app.delete('/api/time-blocks/:id', authRequired, wrap((req, res) =>
     res.json(db.deleteTimeBlock(req.params.id))
@@ -1864,7 +1893,15 @@ function createServer({ db, userDataPath, distDir: distDirOverride }) {
 
   // Free slots for one date + appointment type.
   // Shared by /api/public/availability and /api/public/available-days.
-  function publicAvailability(date, typeId) {
+  // Créneaux libres d'une journée pour la réservation en ligne. Chaque créneau
+  // porte `vetIds` : les vétérinaires libres à ce moment (un RDV sans
+  // vétérinaire ou un blocage « tout le cabinet » occupe tout le monde). Avec
+  // `vetId`, seul ce vétérinaire est considéré. Sans aucun compte vétérinaire,
+  // l'ancien comportement s'applique (tout RDV occupe le créneau).
+  function publicAvailability(date, typeId, vetId) {
+    const vets = db.listVets();
+    if (vetId && !vets.some((v) => v.id === vetId)) return [];
+    const candidates = vetId ? [vetId] : (vets.length ? vets.map((v) => v.id) : [null]);
     const sset = db.getSettings();
     const minDate = (sset.publicBookingMinDate || '').trim();
     if (minDate && date < minDate) return [];
@@ -1904,7 +1941,7 @@ function createServer({ db, userDataPath, distDir: distDirOverride }) {
     const busy = [];
     for (const a of appts) {
       if (a.status === 'cancelled') continue;
-      busy.push({ start: new Date(a.startTime).getTime(), end: new Date(a.endTime).getTime() });
+      busy.push({ vetId: a.vetId || null, start: new Date(a.startTime).getTime(), end: new Date(a.endTime).getTime() });
     }
     for (const b of blocks) {
       // Expand recurring blocks for that date
@@ -1923,26 +1960,36 @@ function createServer({ db, userDataPath, distDir: distDirOverride }) {
           const occEnd = new Date(dayStart);
           occEnd.setHours(blockEnd.getHours(), blockEnd.getMinutes(), 0, 0);
           if (occEnd <= occStart) occEnd.setDate(occEnd.getDate() + 1);
-          busy.push({ start: occStart.getTime(), end: occEnd.getTime() });
+          busy.push({ vetId: b.vetId || null, start: occStart.getTime(), end: occEnd.getTime() });
         }
       } else if (blockEnd >= dayStart && blockStart <= dayEnd) {
-        busy.push({ start: blockStart.getTime(), end: blockEnd.getTime() });
+        busy.push({ vetId: b.vetId || null, start: blockStart.getTime(), end: blockEnd.getTime() });
       }
     }
 
-    const available = slots.filter((s) => {
+    const available = [];
+    for (const s of slots) {
       const st = new Date(s.start).getTime();
       const en = new Date(s.end).getTime();
-      return !busy.some((b) => st < b.end && en > b.start);
-    });
-
+      const freeVets = candidates.filter((cand) => !busy.some((b) =>
+        (cand === null || !b.vetId || b.vetId === cand) && st < b.end && en > b.start));
+      if (freeVets.length) available.push({ ...s, vetIds: freeVets });
+    }
     return available;
   }
+
+  // Version publique : le client voit les heures, pas qui est libre.
+  const publicSlots = (slots) => slots.map(({ start, end }) => ({ start, end }));
+  const publicVetId = (v) => (typeof v === 'string' && v.length <= 64 ? v : undefined);
+
+  app.get('/api/public/vets', wrap((req, res) => {
+    res.json(db.listVets().map((v) => ({ id: v.id, name: v.fullName })));
+  }));
 
   app.get('/api/public/availability', wrap((req, res) => {
     const { date, typeId } = req.query;
     if (!date) return res.status(400).json({ error: 'date required' });
-    res.json(publicAvailability(date, typeId));
+    res.json(publicSlots(publicAvailability(date, typeId, publicVetId(req.query.vetId))));
   }));
 
   // Dates (YYYY-MM-DD) that still have at least one free slot, in chronological
@@ -1960,7 +2007,7 @@ function createServer({ db, userDataPath, distDir: distDirOverride }) {
     for (let i = 0; i < horizon && days.length < limit; i++) {
       const iso = cursor.getFullYear() + '-' + String(cursor.getMonth() + 1).padStart(2, '0') + '-' + String(cursor.getDate()).padStart(2, '0');
       if ((!minDate || iso >= minDate) && !closedDays.includes(cursor.getDay())) {
-        if (publicAvailability(iso, typeId).length > 0) days.push(iso);
+        if (publicAvailability(iso, typeId, publicVetId(req.query.vetId)).length > 0) days.push(iso);
       }
       cursor.setDate(cursor.getDate() + 1);
     }
@@ -1977,6 +2024,10 @@ function createServer({ db, userDataPath, distDir: distDirOverride }) {
   app.post('/api/public/book', bookLimiter, wrap((req, res) => {
     const { firstName, lastName, email, phone, patientName, species, breed,
             startTime, endTime, typeId, reason, lang } = req.body;
+    const vetId = req.body.vetId || undefined;
+    if (vetId !== undefined && (typeof vetId !== 'string' || vetId.length > 64)) {
+      return res.status(400).json({ error: 'Champs invalides.' });
+    }
     if (!firstName || !lastName || !email || !phone || !patientName || !species || !startTime || !endTime) {
       return res.status(400).json({ error: 'Champs obligatoires manquants' });
     }
@@ -2015,25 +2066,16 @@ function createServer({ db, userDataPath, distDir: distDirOverride }) {
     if (closedDays.includes(dowBook)) {
       return res.status(400).json({ error: 'Le cabinet est fermé ce jour-là.' });
     }
-    // Verify slot still available
-    const dayStart = new Date(startTime); dayStart.setHours(0, 0, 0, 0);
-    const dayEnd = new Date(startTime); dayEnd.setHours(23, 59, 59, 999);
-    const appts = db.listAppointments({ startDate: dayStart.toISOString(), endDate: dayEnd.toISOString() });
-    const conflict = appts.find((a) => {
-      if (a.status === 'cancelled') return false;
-      const aSt = new Date(a.startTime).getTime();
-      const aEn = new Date(a.endTime).getTime();
-      const sSt = new Date(startTime).getTime();
-      const sEn = new Date(endTime).getTime();
-      return sSt < aEn && sEn > aSt;
-    });
-    if (conflict) return res.status(409).json({ error: 'Ce créneau vient d\'être pris. Veuillez choisir un autre.' });
     // Le créneau demandé doit être exactement l'un de ceux proposés (horaires,
-    // durée du motif, blocages) : sinon un endTime arbitraire bloquerait l'agenda.
+    // durée du motif, blocages, RDV déjà pris pour ce vétérinaire) : sinon un
+    // endTime arbitraire bloquerait l'agenda.
+    const dayStart = new Date(startTime); dayStart.setHours(0, 0, 0, 0);
     const localDay = `${dayStart.getFullYear()}-${String(dayStart.getMonth() + 1).padStart(2, '0')}-${String(dayStart.getDate()).padStart(2, '0')}`;
-    const offered = publicAvailability(localDay, typeId).some((s) =>
+    const offered = publicAvailability(localDay, typeId, vetId).find((s) =>
       new Date(s.start).getTime() === reqStart && new Date(s.end).getTime() === reqEnd);
-    if (!offered) return res.status(409).json({ error: 'Ce créneau n\'est pas disponible. Veuillez en choisir un autre.' });
+    if (!offered) return res.status(409).json({ error: 'Ce créneau vient d\'être pris ou n\'est pas disponible. Veuillez en choisir un autre.' });
+    // Vétérinaire choisi par le client, sinon le premier libre à cette heure.
+    const bookedVetId = vetId || offered.vetIds[0] || null;
 
     // Create owner (or find existing by email)
     let owner = db.db.prepare('SELECT * FROM owners WHERE email = ? LIMIT 1').get(email);
@@ -2072,6 +2114,7 @@ function createServer({ db, userDataPath, distDir: distDirOverride }) {
       reason: reason || `Réservation en ligne par ${firstName} ${lastName}`,
       status: autoConfirm ? 'scheduled' : 'scheduled',
       appointmentTypeId: typeId || null,
+      vetId: bookedVetId,
     });
 
     // Send confirmation email to client (fire-and-forget; don't block booking response)
@@ -2276,6 +2319,7 @@ p{color:#6b7280;line-height:1.6;}
     const minPick = (minDate && minDate > todayStr) ? minDate : todayStr;
     const cfg = JSON.stringify({
       typeId: appt.appointmentTypeId || '',
+      vetId: appt.vetId || '',
       closedDays: (settings.cabinetClosedDays || '0,6').split(',').map((x) => parseInt(x.trim(), 10)).filter((n) => !isNaN(n)),
     });
     const html = '<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">' +
@@ -2312,7 +2356,7 @@ p{color:#6b7280;line-height:1.6;}
       'function ft(iso){var t=new Date(iso);return String(t.getHours()).padStart(2,"0")+"h"+String(t.getMinutes()).padStart(2,"0");}' +
       'function load(){slotsEl.innerHTML="";msg.textContent="Chargement...";var date=d.value;if(!date){msg.textContent="Choisissez une date.";return;}' +
       'var dow=new Date(date+"T12:00:00").getDay();if(CFG.closedDays.indexOf(dow)>=0){msg.textContent="Le cabinet est ferme ce jour-la. Choisissez une autre date.";return;}' +
-      'fetch("/api/public/availability?date="+date+"&typeId="+encodeURIComponent(CFG.typeId)).then(function(r){return r.json();}).then(function(slots){' +
+      'fetch("/api/public/availability?date="+date+"&typeId="+encodeURIComponent(CFG.typeId)+(CFG.vetId?"&vetId="+encodeURIComponent(CFG.vetId):"")).then(function(r){return r.json();}).then(function(slots){' +
       'if(!slots.length){msg.textContent="Aucun creneau disponible ce jour-la.";return;}msg.textContent="";' +
       'slots.forEach(function(s){var b=document.createElement("button");b.type="submit";b.name="start";b.value=s.start;b.className="slot";b.textContent=ft(s.start);slotsEl.appendChild(b);});' +
       '}).catch(function(){msg.textContent="Erreur de chargement. Reessayez.";});}' +
@@ -2369,8 +2413,10 @@ p{color:#6b7280;line-height:1.6;}
     const dayStart = new Date(newStart); dayStart.setHours(0, 0, 0, 0);
     const dayEnd = new Date(newStart); dayEnd.setHours(23, 59, 59, 999);
     const dayAppts = db.listAppointments({ startDate: dayStart.toISOString(), endDate: dayEnd.toISOString() });
+    // Seuls les RDV du même vétérinaire (ou sans vétérinaire) gênent.
     const conflict = dayAppts.find((a) => {
       if (a.id === appointmentId || a.status === 'cancelled') return false;
+      if (appt.vetId && a.vetId && a.vetId !== appt.vetId) return false;
       return newStartMs < new Date(a.endTime).getTime() && newEnd.getTime() > new Date(a.startTime).getTime();
     });
     if (conflict) return res.type('html').send(retry('Ce creneau vient d\'etre pris.'));
@@ -2378,7 +2424,7 @@ p{color:#6b7280;line-height:1.6;}
     // accepté (horaires d'ouverture, grille, plages bloquées), sinon le lien
     // permettrait de placer le RDV à n'importe quelle heure.
     const localDay = `${dayStart.getFullYear()}-${String(dayStart.getMonth() + 1).padStart(2, '0')}-${String(dayStart.getDate()).padStart(2, '0')}`;
-    const offered = publicAvailability(localDay, appt.appointmentTypeId || undefined)
+    const offered = publicAvailability(localDay, appt.appointmentTypeId || undefined, appt.vetId || undefined)
       .some((s) => new Date(s.start).getTime() === newStartMs);
     if (!offered) return res.type('html').send(retry('Ce creneau n\'est pas disponible.'));
     db.db.prepare('UPDATE appointments SET startTime = ?, endTime = ? WHERE id = ?').run(newStart, newEnd.toISOString(), appointmentId);

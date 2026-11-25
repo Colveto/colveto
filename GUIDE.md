@@ -162,6 +162,10 @@ accolades, comme `{{patientName}}`, sont remplacés automatiquement.
 ### 4.5 Réservation en ligne
 - **Délai minimum** avant un RDV pris en ligne (1 h par défaut ; 24 h = pas de RDV le
   jour même).
+- **À plusieurs vétérinaires**, le client choisit son vétérinaire ou « Sans
+  préférence ». Il ne voit alors que les heures où ce vétérinaire est libre. Sans
+  préférence, le RDV va au premier vétérinaire libre. Avec un seul vétérinaire, rien
+  ne change pour le client.
 - Pour rendre la page de RDV accessible depuis Internet et l'ajouter au site du
   cabinet, transmettez **`RENDEZ-VOUS-EN-LIGNE.md`** à votre informaticien (15 à
   30 min de travail). Sur l'application de bureau, il faut cocher **Activer l'accès
@@ -271,6 +275,12 @@ Chacun a **son propre compte** : ne partagez pas les identifiants. En Belgique, 
 VAMREG activé, indiquez aussi le **n° d'Ordre** des vétérinaires. Un compte peut
 être désactivé (départ d'un employé) sans perdre l'historique.
 
+**Plusieurs vétérinaires.** La case **🩺 Vétérinaire consultant** donne au compte
+**son propre agenda** : il peut être choisi pour un rendez-vous, au cabinet comme en
+ligne. Elle est cochée d'office pour un vétérinaire et pour l'administrateur ;
+décochez-la pour un administrateur qui ne consulte pas (gérant, secrétariat). Les
+comptes qui ont un agenda portent le badge **🩺 Agenda** dans la liste.
+
 ### Sécurité (menu 🔒 Sécurité)
 Chaque utilisateur peut y activer la double authentification (recommandé pour tous)
 et consulter le **journal des connexions**.
@@ -311,6 +321,18 @@ Les prochains rendez-vous et l'essentiel de la journée.
 - Vue **Jour** ou **Semaine**, bouton **Aujourd'hui**.
 - Dans un RDV : statut, et **✉ Envoyer rappel maintenant**.
 - Les RDV pris en ligne par les clients arrivent directement dans l'agenda.
+
+**À plusieurs vétérinaires** (au moins deux comptes « vétérinaire consultant », voir
+§ 6) :
+- Une ligne **Agendas** apparaît en haut : cochez les vétérinaires à afficher. Chacun
+  a sa couleur, et Colveto retient votre choix sur ce poste. Au départ, un vétérinaire
+  voit son propre agenda.
+- Chaque RDV appartient à **un vétérinaire** (champ obligatoire dans le RDV). Par
+  défaut, c'est vous si vous êtes vétérinaire.
+- Un blocage **concerne** soit **tout le cabinet** (fermeture, formation commune),
+  soit **un seul vétérinaire** (congés, chirurgie) : les autres restent réservables.
+- Deux vétérinaires peuvent avoir un RDV à la même heure : seul l'agenda du
+  vétérinaire concerné est occupé.
 
 ### Clients et animaux (menus 👥 Propriétaires et 🐾 Patients)
 - **+ Nouveau propriétaire**, puis dans sa fiche **+ Nouvel animal**.
@@ -433,6 +455,10 @@ avec le nouveau téléphone.
 
 **Un employé a oublié son mot de passe** → un administrateur ouvre 👤 Utilisateurs →
 *Modifier*, et lui attribue un nouveau mot de passe.
+
+**Un vétérinaire n'apparaît pas dans l'agenda ni dans la réservation en ligne** →
+👤 Utilisateurs → *Modifier* : cochez **🩺 Vétérinaire consultant** et vérifiez que
+le compte est actif.
 
 **Une facture validée contient une erreur** → *Annuler facture*, puis en créer une
 nouvelle (une facture validée ne se modifie pas, c'est une obligation comptable).

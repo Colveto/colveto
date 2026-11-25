@@ -4,7 +4,7 @@ import { ROLES, useAuth } from '../context/AuthContext.jsx';
 
 const empty = {
   fullName: '', username: '', email: '', password: '',
-  role: 'assistant', active: true,
+  role: 'assistant', active: true, isVet: false,
 };
 
 export default function Users() {
@@ -21,7 +21,13 @@ export default function Users() {
   }, []);
 
   const openNew = () => { setEditing(empty); setShowModal(true); };
-  const openEdit = (u) => { setEditing({ ...u, password: '', active: !!u.active }); setShowModal(true); };
+  const openEdit = (u) => { setEditing({ ...u, password: '', active: !!u.active, isVet: !!u.isVet }); setShowModal(true); };
+  // Un compte labo (station d’analyses) n'a jamais d'agenda ; passer un nouveau
+  // compte en « Vétérinaire » coche la case d'office.
+  const changeRole = (role) => setEditing((prev) => ({
+    ...prev, role,
+    isVet: role === 'lab' ? false : (!prev.id && role === 'veterinarian') ? true : prev.isVet,
+  }));
 
   const save = async () => {
     if (!editing.fullName || !editing.username) { alert('Nom et identifiant requis'); return; }
@@ -76,7 +82,10 @@ export default function Users() {
                     {u.id === currentUser.id && <span className="text-light"> (vous)</span>}
                   </td>
                   <td>{u.username}</td>
-                  <td><span className="badge badge-scheduled">{ROLES[u.role]?.label || u.role}</span></td>
+                  <td>
+                    <span className="badge badge-scheduled">{ROLES[u.role]?.label || u.role}</span>
+                    {!!u.isVet && <span className="badge badge-paid" style={{ marginLeft: 4 }} title="A un agenda et peut être choisi pour un RDV">🩺 Agenda</span>}
+                  </td>
                   <td>{u.email || '—'}</td>
                   <td>
                     {u.active ? (
@@ -134,7 +143,7 @@ export default function Users() {
             <div className="form-group">
               <label>Rôle *</label>
               <select className="select" value={editing.role}
-                onChange={(e) => setEditing({ ...editing, role: e.target.value })}
+                onChange={(e) => changeRole(e.target.value)}
                 disabled={editing.id === currentUser.id}>
                 {Object.entries(ROLES).map(([k, v]) => (
                   <option key={k} value={k}>{v.label}</option>
@@ -168,6 +177,15 @@ export default function Users() {
             </div>
           </div>
           )}
+          <div className="form-group" style={{ marginBottom: 12 }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 'normal', cursor: editing.role === 'lab' ? 'default' : 'pointer' }}>
+              <input type="checkbox" checked={!!editing.isVet && editing.role !== 'lab'}
+                disabled={editing.role === 'lab'}
+                onChange={(e) => setEditing({ ...editing, isVet: e.target.checked })} />
+              🩺 Vétérinaire consultant : a son propre agenda et peut être choisi pour un rendez-vous (y compris en ligne)
+            </label>
+            {editing.role === 'lab' && <small className="text-light">Un compte labo n'est jamais un vétérinaire.</small>}
+          </div>
         </Modal>
       )}
 
