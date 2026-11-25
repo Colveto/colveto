@@ -797,6 +797,15 @@ export default function Settings() {
       </div>
 
       <div className="card">
+        <h3 className="mt-2">🇧🇪 VAMREG — antibiotiques (Belgique)</h3>
+        <p className="text-light" style={{ marginTop: 0 }}>
+          Pour les cabinets belges titulaires d'un dépôt vétérinaire : déclaration automatique au registre
+          VAMREG de l'AFMPS des antibiotiques reçus et délivrés. Inactif tant que vous ne l'activez pas.
+        </p>
+        <a className="btn btn-primary" href="#/vamreg">Configurer VAMREG</a>
+      </div>
+
+      <div className="card">
         <h3 className="mt-2">Comptabilité Sage</h3>
         <div className="form-row cols-3">
           <div className="form-group">

@@ -13,8 +13,12 @@ export default function Users() {
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState(empty);
 
+  const [vamregOn, setVamregOn] = useState(false);
   const load = () => window.api.users.list().then(setUsers);
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    load();
+    window.api.settings.get().then((s) => setVamregOn(s.vamregEnabled === '1')).catch(() => {});
+  }, []);
 
   const openNew = () => { setEditing(empty); setShowModal(true); };
   const openEdit = (u) => { setEditing({ ...u, password: '', active: !!u.active }); setShowModal(true); };
@@ -23,12 +27,17 @@ export default function Users() {
     if (!editing.fullName || !editing.username) { alert('Nom et identifiant requis'); return; }
     if (!editing.id && !editing.password) { alert('Mot de passe requis'); return; }
     if (editing.password && editing.password.length < 8) { alert('Mot de passe trop court (min 8 caractères)'); return; }
-    if (editing.id) {
-      const data = { ...editing };
-      if (!data.password) delete data.password;
-      await window.api.users.update(editing.id, data);
-    } else {
-      await window.api.users.create(editing);
+    try {
+      if (editing.id) {
+        const data = { ...editing };
+        if (!data.password) delete data.password;
+        await window.api.users.update(editing.id, data);
+      } else {
+        await window.api.users.create(editing);
+      }
+    } catch (e) {
+      alert('Erreur : ' + e.message);
+      return;
     }
     setShowModal(false);
     load();
@@ -150,6 +159,15 @@ export default function Users() {
               </select>
             </div>
           </div>
+          {vamregOn && (editing.role === 'veterinarian' || editing.role === 'admin') && (
+          <div className="form-row">
+            <div className="form-group">
+              <label>🇧🇪 N° d'Ordre des vétérinaires (VAMREG)</label>
+              <input className="input" value={editing.vetOrderNumber || ''} maxLength={5} placeholder="ex. F2345"
+                onChange={(e) => setEditing({ ...editing, vetOrderNumber: e.target.value.toUpperCase() })} />
+            </div>
+          </div>
+          )}
         </Modal>
       )}
 

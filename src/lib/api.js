@@ -308,6 +308,12 @@ export const api = {
     get: () => http('GET', '/api/settings'),
     save: (data) => http('PUT', '/api/settings', data),
   },
+  vamreg: {
+    status: () => http('GET', '/api/vamreg/status'),
+    sync: () => http('POST', '/api/vamreg/sync'),
+    test: () => http('POST', '/api/vamreg/test'),
+    ref: (name) => http('GET', `/api/vamreg/ref/${name}`),
+  },
   stats: {
     dashboard: () => http('GET', '/api/stats/dashboard'),
   },

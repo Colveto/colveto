@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { NavLink } from 'react-router-dom';
 import { useAuth, ROLES } from '../context/AuthContext.jsx';
 import UpdateBanner from './UpdateBanner.jsx';
@@ -27,7 +27,16 @@ const NAV = [
 export default function Layout({ children }) {
   const { user, logout, can } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
-  const visibleNav = NAV.filter((item) => !item.permission || can(item.permission));
+  // Entrée « VAMREG » seulement pour un cabinet belge qui a activé le module.
+  const [vamregOn, setVamregOn] = useState(false);
+  useEffect(() => {
+    if (!user || !['admin', 'veterinarian'].includes(user.role)) return;
+    window.api.settings.get().then((s) => setVamregOn(s.vamregEnabled === '1')).catch(() => {});
+  }, [user]);
+  const nav = vamregOn
+    ? [...NAV.slice(0, NAV.findIndex((i) => i.to === '/sage')), { to: '/vamreg', label: 'VAMREG', icon: '🇧🇪', permission: null }, ...NAV.slice(NAV.findIndex((i) => i.to === '/sage'))]
+    : NAV;
+  const visibleNav = nav.filter((item) => !item.permission || can(item.permission));
 
   return (
     <div className="layout">

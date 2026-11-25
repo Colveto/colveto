@@ -16,6 +16,7 @@ const { renderPatientPdf, renderLabPdf } = require('./patient-pdf');
 const { htmlToPdf } = require('./pdf-chrome');
 const { patientHtml, invoiceHtml, labHtml } = require('./pdf-html');
 const { registerReferralRoutes, makeLimiter } = require('./referrals');
+const { createVamreg } = require('./vamreg');
 
 // Preferred PDF renderers: render the branded HTML via headless Chrome
 // (pixel-identical to the on-screen view), falling back to the PDFKit renderers
@@ -321,6 +322,17 @@ function createServer({ db, userDataPath, distDir: distDirOverride }) {
   }));
   app.use(express.json({ limit: '10mb' }));
   app.use(express.urlencoded({ extended: false }));
+
+  // VAMREG (Belgique) : après toute modification réussie d'un lot, d'une
+  // facture ou d'un médicament, on relance la réconciliation (sans effet si
+  // le module n'est pas activé dans Paramètres).
+  const vamreg = createVamreg({ db });
+  app.use((req, res, next) => {
+    if (req.method !== 'GET' && /^\/api\/(lots|invoices|medicines|users)(\/|$)/.test(req.path)) {
+      res.on('finish', () => { if (res.statusCode < 400) vamreg.schedule(); });
+    }
+    next();
+  });
 
   // Persistent JWT secret per installation
   const secretFile = path.join(userDataPath, 'jwt-secret.txt');
@@ -1663,6 +1675,9 @@ function createServer({ db, userDataPath, distDir: distDirOverride }) {
     const out = { ...settings };
     if (role === 'admin' && out.smtpPass) out.smtpPass = SMTP_PASS_MASK;
     else delete out.smtpPass;
+    // Même règle pour la clé API VAMREG du cabinet.
+    if (role === 'admin' && out.vamregApiKey) out.vamregApiKey = SMTP_PASS_MASK;
+    else delete out.vamregApiKey;
     return out;
   }
   // ===== Import depuis un autre logiciel (Paramètres → Importer des données) =====
@@ -1723,10 +1738,33 @@ function createServer({ db, userDataPath, distDir: distDirOverride }) {
   app.put('/api/settings', authRequired, requireRole('admin'), wrap((req, res) => {
     const data = { ...req.body };
     if (data.smtpPass === SMTP_PASS_MASK) delete data.smtpPass;
+    if (data.vamregApiKey === SMTP_PASS_MASK) delete data.vamregApiKey;
+    else if (typeof data.vamregApiKey === 'string') data.vamregApiKey = data.vamregApiKey.trim();
+    // Première activation de VAMREG : seules les déclarations datées de ce jour
+    // ou plus tard partent (pas de rattrapage involontaire de l'historique).
+    const vamregTouched = ['vamregEnabled', 'vamregApiKey', 'vamregEnvironment', 'vamregSpeciesMap',
+      'vamregDeclareIn', 'vamregDefaultProviderType', 'vamregDefaultVetOrderNumber', 'vamregStartDate'].some((k) => k in data);
+    if (data.vamregEnabled === '1' && !db.getSettings().vamregStartDate && !data.vamregStartDate) {
+      data.vamregStartDate = new Date().toISOString().slice(0, 10);
+    }
+    if (data.vamregDefaultVetOrderNumber) {
+      data.vamregDefaultVetOrderNumber = String(data.vamregDefaultVetOrderNumber).trim().toUpperCase();
+      if (!/^[01NF]\d{4}$/.test(data.vamregDefaultVetOrderNumber)) {
+        return res.status(400).json({ error: 'N° d\'Ordre invalide : 0, 1, N ou F suivi de 4 chiffres (ex. F2345).' });
+      }
+    }
+    if (vamregTouched) setImmediate(() => vamreg.schedule(1000));
     // L'accord sur les conditions ne s'enregistre que par /api/terms/accept.
     delete data.termsVersion; delete data.termsAcceptedAt; delete data.termsAcceptedBy;
     res.json(publicSettings(db.saveSettings(data), req.user.role));
   }));
+
+  // ===== VAMREG (Belgique) =====
+  app.get('/api/vamreg/status', authRequired, requireRole('admin', 'veterinarian'), wrap((req, res) => res.json(vamreg.status())));
+  app.post('/api/vamreg/sync', authRequired, requireRole('admin', 'veterinarian'), wrap(async (req, res) =>
+    res.json(await vamreg.sync({ force: true }))));
+  app.post('/api/vamreg/test', authRequired, requireRole('admin'), wrap(async (req, res) => res.json(await vamreg.testConnection())));
+  app.get('/api/vamreg/ref/:name', authRequired, wrap(async (req, res) => res.json(await vamreg.referenceList(req.params.name))));
 
   // ===== Stats =====
   app.get('/api/stats/dashboard', authRequired, wrap((req, res) =>

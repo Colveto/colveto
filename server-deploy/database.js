@@ -444,6 +444,43 @@ class Database {
     for (const sql of lotDiscountCols) {
       try { this.db.exec(sql); } catch (e) { /* already exists */ }
     }
+    // VAMREG (registre belge des antibiotiques vétérinaires, AFMPS) : module
+    // facultatif, inactif tant que le cabinet ne l'active pas dans Paramètres.
+    const vamregCols = [
+      'ALTER TABLE medicines ADD COLUMN vamregDeclare INTEGER NOT NULL DEFAULT 0',
+      'ALTER TABLE medicines ADD COLUMN vamregProductType TEXT',   // BE | FOREIGN
+      'ALTER TABLE medicines ADD COLUMN vamregCnk TEXT',
+      'ALTER TABLE medicines ADD COLUMN vamregProductLabel TEXT',
+      'ALTER TABLE medicines ADD COLUMN vamregPackBaseUnits REAL', // contenu d'un conditionnement, en unité de base
+      'ALTER TABLE medicines ADD COLUMN vamregProviderType TEXT',  // type de fournisseur par défaut
+      'ALTER TABLE medicines ADD COLUMN vamregForeign TEXT',       // JSON : produit étranger
+      'ALTER TABLE medicine_lots ADD COLUMN vamregProviderType TEXT',
+      'ALTER TABLE users ADD COLUMN vetOrderNumber TEXT',
+    ];
+    for (const sql of vamregCols) {
+      try { this.db.exec(sql); } catch (e) { /* already exists */ }
+    }
+    // Une ligne par déclaration attendue (sourceKey = « lot:<id> » ou « item:<id> »).
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS vamreg_declarations (
+        id TEXT PRIMARY KEY,
+        sourceKey TEXT NOT NULL UNIQUE,
+        register TEXT,
+        declDate TEXT,
+        label TEXT,
+        payload TEXT,
+        payloadHash TEXT,
+        vamregId TEXT,
+        environment TEXT,
+        status TEXT NOT NULL,
+        lastError TEXT,
+        attempts INTEGER NOT NULL DEFAULT 0,
+        createdAt TEXT NOT NULL,
+        updatedAt TEXT NOT NULL,
+        sentAt TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_vamreg_status ON vamreg_declarations(status);
+    `);
     // Faits légaux/administratifs rattachés au patient (déclaration chien
     // dangereux, date d'identification électronique).
     const patientLegalCols = [
@@ -865,13 +902,13 @@ class Database {
 
   listUsers() {
     return this.db.prepare(
-      'SELECT id, username, fullName, email, role, active, createdAt, lastLogin FROM users ORDER BY fullName'
+      'SELECT id, username, fullName, email, role, active, createdAt, lastLogin, vetOrderNumber FROM users ORDER BY fullName'
     ).all();
   }
 
   getUser(id) {
     return this.db.prepare(
-      'SELECT id, username, fullName, email, role, active, createdAt, lastLogin, totpEnabled FROM users WHERE id = ?'
+      'SELECT id, username, fullName, email, role, active, createdAt, lastLogin, totpEnabled, vetOrderNumber FROM users WHERE id = ?'
     ).get(id);
   }
 
@@ -928,6 +965,7 @@ class Database {
       data.active === false ? 0 : 1,
       now, now
     );
+    if (data.vetOrderNumber) this.updateUser(id, { vetOrderNumber: data.vetOrderNumber });
     return this.getUser(id);
   }
 
@@ -943,6 +981,14 @@ class Database {
     if (data.email !== undefined) { fields.push('email = ?'); values.push(data.email || null); }
     if (data.role !== undefined) { fields.push('role = ?'); values.push(data.role); }
     if (data.active !== undefined) { fields.push('active = ?'); values.push(data.active ? 1 : 0); }
+    if (data.vetOrderNumber !== undefined) {
+      // N° d'inscription à l'Ordre des vétérinaires belge (VAMREG) : 0, 1, N ou F + 4 chiffres.
+      const n = String(data.vetOrderNumber || '').trim().toUpperCase();
+      if (n && !/^[01NF]\d{4}$/.test(n)) {
+        throw Object.assign(new Error('N° d\'Ordre invalide : 0, 1, N ou F suivi de 4 chiffres (ex. F2345).'), { status: 400 });
+      }
+      fields.push('vetOrderNumber = ?'); values.push(n || null);
+    }
     if (data.password) {
       fields.push('passwordHash = ?');
       values.push(bcrypt.hashSync(data.password, 10));
@@ -2165,7 +2211,37 @@ class Database {
     if (Array.isArray(data.saleUnits)) {
       for (const u of data.saleUnits) this._insertSaleUnit(id, u);
     }
+    if (data.vamreg) this._saveMedicineVamreg(id, data.vamreg);
     return this.getMedicine(id);
+  }
+
+  // Champs VAMREG d'un médicament (antibiotique à déclarer en Belgique).
+  _saveMedicineVamreg(id, v) {
+    const declare = v.declare ? 1 : 0;
+    const type = v.productType === 'FOREIGN' ? 'FOREIGN' : 'BE';
+    const cnk = String(v.cnk || '').trim();
+    if (declare && type === 'BE' && !/^\d{7}$/.test(cnk)) {
+      throw Object.assign(new Error('VAMREG : le code CNK doit compter 7 chiffres.'), { status: 400 });
+    }
+    const pack = v.packBaseUnits != null && v.packBaseUnits !== '' ? Number(v.packBaseUnits) : null;
+    if (declare && !(pack > 0)) {
+      throw Object.assign(new Error('VAMREG : indiquez le contenu d\'un conditionnement.'), { status: 400 });
+    }
+    const f = v.foreign || {};
+    const foreign = type === 'FOREIGN' ? JSON.stringify({
+      foreignProductName: (f.foreignProductName || '').trim() || null,
+      foreignMaNumber: (f.foreignMaNumber || '').trim() || null,
+      foreignMaHolder: (f.foreignMaHolder || '').trim() || null,
+      packSize: (f.packSize || '').trim() || null,
+      pharmaceuticalFormSporId: f.pharmaceuticalFormSporId || null,
+      activeSubstanceStrengthUnits: Array.isArray(f.activeSubstanceStrengthUnits) && f.activeSubstanceStrengthUnits.length
+        ? f.activeSubstanceStrengthUnits : null,
+    }) : null;
+    this.db.prepare(`
+      UPDATE medicines SET vamregDeclare=?, vamregProductType=?, vamregCnk=?, vamregProductLabel=?,
+        vamregPackBaseUnits=?, vamregProviderType=?, vamregForeign=? WHERE id=?
+    `).run(declare, type, type === 'BE' ? (cnk || null) : null, v.productLabel || null,
+      pack, v.providerType || null, foreign, id);
   }
 
   updateMedicine(id, data) {
@@ -2185,6 +2261,7 @@ class Database {
       data.notes || null,
       id
     );
+    if (data.vamreg) this._saveMedicineVamreg(id, data.vamreg);
     return this.getMedicine(id);
   }
 
@@ -2325,6 +2402,9 @@ class Database {
       now,
       data.createdBy || null
     );
+    if (data.vamregProviderType) {
+      this.db.prepare('UPDATE medicine_lots SET vamregProviderType = ? WHERE id = ?').run(data.vamregProviderType, id);
+    }
     return this.getLot(id);
   }
 
@@ -2365,6 +2445,9 @@ class Database {
       data.notes ?? cur.notes,
       id
     );
+    if (data.vamregProviderType !== undefined) {
+      this.db.prepare('UPDATE medicine_lots SET vamregProviderType = ? WHERE id = ?').run(data.vamregProviderType || null, id);
+    }
     return this.getLot(id);
   }
 

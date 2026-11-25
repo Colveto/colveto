@@ -34,6 +34,7 @@ import Referrals from './pages/Referrals.jsx';
 import ReferralDetail from './pages/ReferralDetail.jsx';
 import ReferringVets from './pages/ReferringVets.jsx';
 import ReferringVetDetail from './pages/ReferringVetDetail.jsx';
+import Vamreg from './pages/Vamreg.jsx';
 
 function ProtectedRoute({ permission, children }) {
   const { can } = useAuth();
@@ -176,6 +177,7 @@ function MainRoutes({ location }) {
           <ProtectedRoute permission="users"><Users /></ProtectedRoute>
         } />
         <Route path="/security" element={<Security />} />
+        <Route path="/vamreg" element={<Vamreg />} />
         <Route path="/referrals" element={<Referrals />} />
         <Route path="/referrals/:id" element={<ReferralDetail />} />
         <Route path="/referring-vets" element={<ReferringVets />} />

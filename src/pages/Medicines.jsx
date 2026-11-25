@@ -2,6 +2,7 @@ import React, { useEffect, useState, useMemo } from 'react';
 import { useAuth } from '../context/AuthContext.jsx';
 import { Link } from 'react-router-dom';
 import { ttcOf, fmtEur, num as toNum } from '../lib/money.js';
+import VamregMedicineFields, { vamregPayloadFrom } from '../components/VamregMedicineFields.jsx';
 
 function parseDecimal(s) {
   if (s === '' || s == null) return '';
@@ -69,6 +70,16 @@ export default function Medicines() {
   const [addingLot, setAddingLot] = useState(null); // { medicineId, medicineName, baseUnit }
   const [newLot, setNewLot] = useState(null);
   const [lotQtyEdit, setLotQtyEdit] = useState(null); // { id, value }
+  // VAMREG (Belgique) : champs visibles seulement si le module est activé.
+  const [vamregOn, setVamregOn] = useState(false);
+  const [vamregProviders, setVamregProviders] = useState([]);
+  useEffect(() => {
+    window.api.settings.get().then((s) => {
+      const on = s.vamregEnabled === '1';
+      setVamregOn(on);
+      if (on) window.api.vamreg.ref('provider-type').then(setVamregProviders).catch(() => {});
+    }).catch(() => {});
+  }, []);
 
   // Escape key closes any open modal
   useEffect(() => {
@@ -119,8 +130,12 @@ export default function Medicines() {
 
   function startAddLot(med) {
     const today = new Date().toISOString().slice(0, 10);
-    setAddingLot({ medicineId: med.id, medicineName: med.name, baseUnit: med.baseUnit });
+    setAddingLot({
+      medicineId: med.id, medicineName: med.name, baseUnit: med.baseUnit,
+      vamreg: vamregOn && med.vamregDeclare ? { packBaseUnits: Number(med.vamregPackBaseUnits) || 0 } : null,
+    });
     setNewLot({
+      vamregProviderType: med.vamregProviderType || '',
       lotNumber: '',
       expiryDate: '',
       supplierName: '',
@@ -150,6 +165,7 @@ export default function Medicines() {
         purchasePriceHT: Number(totalPurchasePriceHT(newLot)) || 0,
         initialQuantityBaseUnit: totalBaseUnitsReceived(newLot),
         notes: newLot.notes?.trim() || null,
+        ...(addingLot.vamreg ? { vamregProviderType: newLot.vamregProviderType || null } : {}),
       });
       setAddingLot(null);
       setNewLot(null);
@@ -246,6 +262,7 @@ export default function Medicines() {
         quantityInBaseUnit: num(u.quantityInBaseUnit),
         defaultPriceHT: num(u.defaultPriceHT),
       })),
+      ...(vamregOn ? { vamreg: vamregPayloadFrom(editing) } : {}),
     };
     try {
       if (editing.id) {
@@ -456,6 +473,8 @@ export default function Medicines() {
             ))}
             <button className="btn btn-secondary" onClick={addUnit}>+ Ajouter une unité</button>
 
+            {vamregOn && <VamregMedicineFields editing={editing} setEditing={setEditing} />}
+
             {editing.id && (
               <>
                 <h4 style={{ marginTop: 24 }}>Lots en stock</h4>
@@ -606,6 +625,32 @@ export default function Medicines() {
                   onChange={(e) => setNewLot({ ...newLot, supplierName: e.target.value })} />
               </div>
             </div>
+
+            {addingLot.vamreg && (() => {
+              const pack = addingLot.vamreg.packBaseUnits;
+              const total = totalBaseUnitsReceived(newLot);
+              const packs = pack > 0 ? total / pack : null;
+              const whole = packs != null && Math.abs(packs - Math.round(packs)) < 1e-6;
+              return (
+                <div className="form-row" style={{ background: '#f8fafc', border: '1px solid #e5e7eb', borderRadius: 8, padding: 10 }}>
+                  <label>🇧🇪 VAMREG — type de fournisseur</label>
+                  <select className="select" value={newLot.vamregProviderType}
+                    onChange={(e) => setNewLot({ ...newLot, vamregProviderType: e.target.value })}>
+                    <option value="">Valeur par défaut du cabinet</option>
+                    {vamregProviders.map((p) => <option key={p.code} value={p.code}>{p.fr}</option>)}
+                  </select>
+                  {total > 0 && (
+                    <div style={{ fontSize: '0.8rem', marginTop: 6, color: packs != null && whole ? '#475569' : '#b45309' }}>
+                      {packs == null
+                        ? '⚠️ Contenu d\'un conditionnement non renseigné sur la fiche médicament : la réception ne pourra pas être déclarée.'
+                        : whole
+                          ? `Sera déclaré : ${Math.round(packs)} conditionnement(s).`
+                          : `⚠️ ${total} ${addingLot.baseUnit} ne font pas un nombre entier de conditionnements (${pack} ${addingLot.baseUnit}) : VAMREG refusera la déclaration.`}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
 
             <div className="form-row">
               <label>Notes</label>

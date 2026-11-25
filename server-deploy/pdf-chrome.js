@@ -32,18 +32,47 @@ function launchArgs() {
   ];
 }
 
+// puppeteer ≥ 22 expose `browser.connected` (propriété) ; `isConnected()` a été
+// supprimé en v25. L'ancien appel levait une TypeError avalée par le catch : chaque
+// PDF relançait un Chrome complet sans fermer le précédent → saturation mémoire du
+// VPS (OOM du 11/11 et du 13/11/2026).
+function isAlive(b) {
+  if (!b) return false;
+  if (typeof b.connected === 'boolean') return b.connected;
+  if (typeof b.isConnected === 'function') return b.isConnected();
+  return false;
+}
+
+// Ferme vraiment un navigateur qu'on abandonne (y compris s'il est déconnecté
+// mais que le processus vit encore).
+function killBrowser(b) {
+  if (!b) return;
+  b.close().catch(() => {});
+  try { const proc = b.process(); if (proc && proc.exitCode === null) proc.kill('SIGKILL'); } catch { /* ignore */ }
+}
+
 async function getBrowser() {
   if (!puppeteer) throw new Error('puppeteer non installé');
   if (browserPromise) {
-    try {
-      const b = await browserPromise;
-      if (b.isConnected()) return b;
-    } catch { /* fall through to relaunch */ }
+    let b = null;
+    try { b = await browserPromise; } catch { /* lancement échoué → relance */ }
+    if (isAlive(b)) return b;
+    killBrowser(b);
     browserPromise = null;
   }
-  browserPromise = puppeteer.launch({ headless: 'new', args: launchArgs() });
-  const b = await browserPromise;
-  b.on('disconnected', () => { browserPromise = null; });
+  const p = puppeteer.launch({ headless: 'new', args: launchArgs() });
+  browserPromise = p;
+  let b;
+  try {
+    b = await p;
+  } catch (e) {
+    if (browserPromise === p) browserPromise = null;
+    throw e;
+  }
+  b.on('disconnected', () => {
+    if (browserPromise === p) browserPromise = null;
+    killBrowser(b);
+  });
   return b;
 }
 
@@ -97,8 +126,30 @@ async function htmlToPdfElectron(html, timeoutMs) {
   }
 }
 
+// Le VPS n'a que 4 Go sans swap : on ne garde pas Chrome (~400 Mo et des processus
+// auxiliaires qui s'accumulent) quand aucun PDF n'est demandé.
+const IDLE_CLOSE_MS = 2 * 60 * 1000;
+let idleTimer = null;
+let activeRenders = 0;
+function scheduleIdleClose() {
+  clearTimeout(idleTimer);
+  idleTimer = setTimeout(() => { if (activeRenders === 0) shutdown(); }, IDLE_CLOSE_MS);
+  if (idleTimer.unref) idleTimer.unref();
+}
+
 async function htmlToPdf(html, { timeoutMs = 20000 } = {}) {
   if (electron && electron.BrowserWindow) return htmlToPdfElectron(html, timeoutMs);
+  activeRenders++;
+  clearTimeout(idleTimer);
+  try {
+    return await renderWithChrome(html, timeoutMs);
+  } finally {
+    activeRenders--;
+    scheduleIdleClose();
+  }
+}
+
+async function renderWithChrome(html, timeoutMs) {
   const browser = await getBrowser();
   const page = await browser.newPage();
   try {
@@ -146,8 +197,12 @@ async function isAvailable() {
 
 async function shutdown() {
   if (!browserPromise) return;
-  try { const b = await browserPromise; await b.close(); } catch { /* ignore */ }
+  const p = browserPromise;
   browserPromise = null;
+  let b = null;
+  try { b = await p; } catch { return; }
+  try { await b.close(); } catch { /* ignore */ }
+  killBrowser(b);
 }
 
 module.exports = { htmlToPdf, getBrowser, isAvailable, shutdown };

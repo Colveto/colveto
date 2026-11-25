@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import Modal from './Modal.jsx';
 import SearchSelect from './SearchSelect.jsx';
 
-const SPECIES = ['Chien', 'Chat', 'Lapin', 'NAC', 'Oiseau', 'Reptile', 'Cheval', 'Autre'];
+export const SPECIES = ['Chien', 'Chat', 'Lapin', 'NAC', 'Oiseau', 'Reptile', 'Cheval', 'Autre'];
 const SEX = [{ v: 'M', l: 'Mâle' }, { v: 'F', l: 'Femelle' }];
 
 const emptyPatient = (ownerId) => ({
