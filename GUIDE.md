@@ -174,6 +174,56 @@ la fiduciaire), comptes Sage pour l'export comptable.
 ### 4.7 Sauvegarde — à faire dès le premier jour
 Voir [chapitre 10](#10-sauvegardes-sécurité-et-mises-à-jour).
 
+### 4.8 VAMREG — antibiotiques (Belgique uniquement)
+Pour les cabinets belges qui ont un **dépôt de médicaments** : Colveto déclare
+lui-même au registre VAMREG de l'AFMPS les antibiotiques reçus (registre *IN*) et
+délivrés (registre *OUT*). Hors de Belgique, laissez ce module désactivé.
+
+> **Quelles espèces ?** VAMREG couvre les **chevaux** et les **poissons d'élevage**
+> depuis le 1er juillet 2026, puis les chiens, chats et autres animaux de compagnie
+> à partir du 1er janvier 2029. Les bovins, porcs, volailles, veaux, lapins et
+> petits ruminants se déclarent dans **Sanitel-Med**, pas dans VAMREG : Colveto ne
+> les envoie pas.
+
+1. **Créer la clé API** : sur le portail de l'AFMPS (app.fagg-afmps.be → FAMHP
+   Connect → onglet *Clés API*), avec le compte du dépôt qui a le rôle
+   « déclarant ». Suivez le guide de l'AFMPS « VAMREG — Création d'une clé API ».
+2. **Paramètres → Configurer VAMREG** (ou menu 🇧🇪 VAMREG une fois activé) :
+   - cochez **Activer les déclarations VAMREG**, choisissez l'environnement
+     **Production — déclarations officielles** ;
+   - collez la **clé API**, puis **Tester** : le message « Connexion à VAMREG
+     (production) réussie » doit s'afficher ;
+   - indiquez le **n° d'Ordre par défaut** (ex. F2345) et le **type de fournisseur
+     habituel** (distributeur belge, pharmacie…) ;
+   - **Espèces** : pour chaque espèce de Colveto, l'espèce VAMREG correspondante ou
+     « Ne pas déclarer ». Par défaut, seul le cheval est déclaré.
+   - **Enregistrer**.
+3. **Médicaments** : sur la fiche de chaque antibiotique, cochez **🇧🇪 Antibiotique
+   à déclarer à VAMREG**, puis cherchez le produit dans la liste officielle (nom ou
+   code CNK). Le CNK et le **contenu d'un conditionnement** se remplissent seuls :
+   vérifiez ce dernier (par exemple 100 pour un flacon de 100 mL si l'unité de base
+   est le mL). Un produit acheté à l'étranger se saisit comme « Produit étranger ».
+4. **Utilisateurs** : renseignez le **n° d'Ordre** de chaque vétérinaire.
+
+Ensuite, tout est automatique :
+- à chaque **réception de lot**, une entrée est déclarée (choisissez le type de
+  fournisseur dans la fenêtre « Recevoir un lot » ; la quantité reçue doit faire un
+  nombre entier de conditionnements) ;
+- à chaque **facture validée** pour une espèce déclarée, une sortie est déclarée,
+  au nom du vétérinaire qui a délivré le produit ;
+- une **facture annulée** ou un **lot corrigé** est supprimé ou modifié chez VAMREG,
+  tant que le trimestre est encore ouvert ;
+- rien n'est envoyé pour les dates antérieures à l'activation du module.
+
+La page **🇧🇪 VAMREG** montre chaque déclaration : ✅ envoyée, ⏳ en attente (VAMREG
+indisponible, nouvel essai toutes les 15 minutes), ❌ à corriger (le motif est
+indiqué : CNK manquant, n° d'Ordre manquant, quantité non entière…). Corrigez la
+fiche concernée, puis **Envoyer maintenant**. Vous restez responsable de vos
+déclarations : jetez un œil à cette page au moins une fois par trimestre.
+
+Pas encore pris en charge : les **préparations magistrales** et l'indication
+(facultative) ; déclarez-les directement sur vamreg.be.
+
 ---
 
 ## 5. Préparer le catalogue
@@ -190,6 +240,8 @@ Voir [chapitre 10](#10-sauvegardes-sécurité-et-mises-à-jour).
    avec marge cible** propose les prix de vente.
 3. Le stock se décompte tout seul à chaque facture. Pour une casse ou un inventaire,
    cliquez sur la quantité restante pour la corriger (menu 📦 Stock).
+4. **Belgique** : cochez *Antibiotique à déclarer à VAMREG* sur les antibiotiques
+   (voir [4.8](#48-vamreg--antibiotiques-belgique-uniquement)).
 
 ### Protocoles (menu 🧪 Protocoles)
 Un protocole est un ensemble d'actes et de produits facturés ensemble (par exemple
@@ -215,7 +267,8 @@ Textes types pour les comptes rendus (examen, traitement). **+ Nouveau modèle**
 | **Vétérinaire** | agenda, clients, animaux, dossiers médicaux, factures |
 | **Assistant(e)** | agenda, clients, animaux, préparation des factures et encaissements |
 
-Chacun a **son propre compte** : ne partagez pas les identifiants. Un compte peut
+Chacun a **son propre compte** : ne partagez pas les identifiants. En Belgique, avec
+VAMREG activé, indiquez aussi le **n° d'Ordre** des vétérinaires. Un compte peut
 être désactivé (départ d'un employé) sans perdre l'historique.
 
 ### Sécurité (menu 🔒 Sécurité)
@@ -383,6 +436,12 @@ avec le nouveau téléphone.
 
 **Une facture validée contient une erreur** → *Annuler facture*, puis en créer une
 nouvelle (une facture validée ne se modifie pas, c'est une obligation comptable).
+
+**VAMREG : une déclaration reste « à corriger »** → ouvrez 🇧🇪 VAMREG, lisez le
+motif, corrigez la fiche du médicament (CNK, contenu d'un conditionnement), le n°
+d'Ordre du vétérinaire (👤 Utilisateurs) ou la quantité du lot, puis **Envoyer
+maintenant**. « Clé API refusée » : la clé a expiré ou vient de l'environnement de
+test, recréez-la sur le portail de l'AFMPS.
 
 **Autre question ?** Ouvrez un ticket sur
 [github.com/Colveto/colveto/issues](https://github.com/Colveto/colveto/issues), sans

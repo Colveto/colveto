@@ -20,6 +20,7 @@ sous licence libre pour que d'autres cabinets puissent l'utiliser, l'adapter et 
 - **Résultats d'analyses de laboratoire** classés dans le dossier du patient
 - **Portail vétérinaires référents** : formulaire d'adressage et suivi sécurisé du dossier
 - **Rapports** et **export comptable** (FEC, CSV, Sage)
+- **Belgique — VAMREG** : déclaration automatique des antibiotiques à l'AFMPS (dépôt vétérinaire)
 - **Sécurité** : comptes par rôle, double authentification (obligatoire pour l'administrateur),
   journal des connexions
 - **Sauvegardes automatiques** et **export complet de vos données** (JSON / CSV),
