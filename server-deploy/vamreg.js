@@ -163,7 +163,8 @@ function computeDesired(rawDb, settings, now = new Date()) {
     if (!error && !(units > 0)) error = 'Quantité délivrée inconnue.';
     if (!error && !/^[01NF]\d{4}$/.test(vet)) error = 'N° d\'Ordre du vétérinaire manquant (Utilisateurs ou Paramètres → VAMREG).';
     if (error) { problems.set(key, { ...base, error }); continue; }
-    const packs = round(units / pack);
+    // ICD : 3 décimales au plus, entre 0,001 et 100 000.
+    const packs = Math.max(0.001, round(units / pack, 3));
     base.label += ` — ${fmt(packs)} cond.`;
     desired.set(key, {
       ...base,

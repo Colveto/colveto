@@ -1,6 +1,6 @@
 {
   "name": "vet-clinic-server",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "private": true,
   "description": "Headless server for the Vet Clinic app (VPS deployment)",
   "main": "server-standalone.js",
